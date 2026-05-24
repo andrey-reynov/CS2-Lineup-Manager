@@ -9,11 +9,21 @@
     </section>
 
     <nav class="primary-nav" aria-label="Application sections">
-      <button class="nav-button is-muted" type="button">
+      <button
+        class="nav-button"
+        type="button"
+        [class.is-active]="appView() === 'home'"
+        (click)="selectHome()"
+      >
         <span class="nav-icon" aria-hidden="true">H</span>
         Home
       </button>
-      <button class="nav-button is-muted" type="button">
+      <button
+        class="nav-button"
+        type="button"
+        [class.is-active]="appView() === 'settings'"
+        (click)="selectSettings()"
+      >
         <span class="nav-icon" aria-hidden="true">S</span>
         Settings
       </button>
@@ -30,7 +40,7 @@
           <button
             class="map-button"
             type="button"
-            [class.is-active]="selectedMap().id === map.id"
+            [class.is-active]="selectedMap()?.id === map.id"
             (click)="selectMap(map)"
           >
             <span>
@@ -53,110 +63,128 @@
 
   <section class="content" aria-label="Map workspace">
     <div class="map-stage" [class.has-point-details]="selectedPoint()">
-      <div
-        class="map-board"
-        role="img"
-        [attr.aria-label]="selectedMap().name + ' radar, ' + selectedLevel().name"
-        [class.is-panning]="mapZoom() > 1"
-        (pointerdown)="onBoardPointerDown($event)"
-        (pointermove)="onBoardPointerMove($event)"
-        (pointerup)="onBoardPointerUp($event)"
-        (pointercancel)="closePointEditor()"
-        (click)="onBoardClick($event)"
-        (wheel)="onBoardWheel($event)"
-      >
-        <div
-          class="map-content"
-          [style.transform]="'translate(' + mapPan().x + 'px, ' + mapPan().y + 'px) scale(' + mapZoom() + ')'"
-        >
-          <img
-            class="map-image"
-            [src]="selectedLevel().imageUrl"
-            [alt]="'Мини-карта ' + selectedMap().name + ', ' + selectedLevel().name"
-          />
-
-          @for (point of currentPoints(); track point.id) {
-            <button
-              class="map-point"
-              type="button"
-              [class.is-spawn]="point.kind === 'spawn'"
-              [class.is-bomb]="point.kind === 'bomb'"
-              [class.is-lineup]="point.kind === 'lineup'"
-              [class.is-custom]="point.kind === 'custom'"
-              [class.is-smoke]="point.grenadeCategoryId === 'smoke'"
-              [class.is-flash]="point.grenadeCategoryId === 'flash'"
-              [class.is-molotov]="point.grenadeCategoryId === 'molotov'"
-              [class.is-he]="point.grenadeCategoryId === 'he'"
-              [style.left.%]="point.x"
-              [style.top.%]="point.y"
-              [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
-              (click)="openPointEditor(point, $event)"
-            >
-              @if (grenadeCategoryForPoint(point)?.iconUrl; as iconUrl) {
-                <span
-                  class="map-point-icon"
-                  aria-hidden="true"
-                  [style.mask-image]="'url(' + iconUrl + ')'"
-                  [style.-webkit-mask-image]="'url(' + iconUrl + ')'"
-                ></span>
-              }
-            </button>
+      @if (appView() === 'home') {
+        <div class="empty-board">
+          <span>Choose a map</span>
+        </div>
+      } @else if (appView() === 'settings') {
+        <section class="settings-panel" aria-label="Settings">
+          <h2>Settings</h2>
+          <label class="settings-action">
+            <input type="file" accept=".zip,application/zip" (change)="importZip($event)" />
+            Import ZIP
+          </label>
+          <button type="button" class="settings-action" (click)="exportZip()">Export ZIP</button>
+          @if (importError()) {
+            <p class="settings-error">{{ importError() }}</p>
           }
-        </div>
-
-        @if (selectedMap().levels.length > 1) {
-          <div class="level-switcher" aria-label="Map level">
-            @for (level of selectedMap().levels; track level.id; let index = $index) {
-              <button
-                type="button"
-                [class.is-active]="selectedLevel().id === level.id"
-                [attr.aria-label]="level.name"
-                (click)="selectLevel(level); $event.stopPropagation()"
-              >
-                L{{ index + 1 }}
-              </button>
-            }
-          </div>
-        }
-
-        <div class="zoom-controls" aria-label="Map zoom">
-          <button type="button" aria-label="Zoom in" (click)="zoomIn($event)">
-            +
-          </button>
-          <button type="button" aria-label="Zoom out" (click)="zoomOut($event)">
-            -
-          </button>
-        </div>
-
-        @if (pointActionMenu(); as menu) {
+        </section>
+      } @else if (selectedMap(); as map) {
+        @if (selectedLevel(); as level) {
           <div
-            class="point-action-menu"
-            [style.left.px]="menu.x"
-            [style.top.px]="menu.y"
-            (click)="$event.stopPropagation()"
+            class="map-board"
+            role="img"
+            [attr.aria-label]="map.name + ' radar, ' + level.name"
+            [class.is-panning]="mapZoom() > 1"
+            (pointerdown)="onBoardPointerDown($event)"
+            (pointermove)="onBoardPointerMove($event)"
+            (pointerup)="onBoardPointerUp($event)"
+            (pointercancel)="closePointEditor()"
+            (click)="onBoardClick($event)"
+            (wheel)="onBoardWheel($event)"
           >
-            <span>Add grenade</span>
-            <div class="point-action-grid">
-              @for (category of grenadeCategories; track category.id) {
-                <button type="button" (click)="assignGrenadeToPoint(menu.pointId, category, $event)">
-                  @if (category.iconUrl) {
+            <div
+              class="map-content"
+              [style.transform]="'translate(' + mapPan().x + 'px, ' + mapPan().y + 'px) scale(' + mapZoom() + ')'"
+            >
+              <img
+                class="map-image"
+                [src]="level.imageUrl"
+                [alt]="map.name + ' radar, ' + level.name"
+              />
+
+              @for (point of currentPoints(); track point.id) {
+                <button
+                  class="map-point"
+                  type="button"
+                  [class.is-spawn]="point.kind === 'spawn'"
+                  [class.is-bomb]="point.kind === 'bomb'"
+                  [class.is-lineup]="point.kind === 'lineup'"
+                  [class.is-custom]="point.kind === 'custom'"
+                  [class.is-smoke]="point.grenadeCategoryId === 'smoke'"
+                  [class.is-flash]="point.grenadeCategoryId === 'flash'"
+                  [class.is-molotov]="point.grenadeCategoryId === 'molotov'"
+                  [class.is-he]="point.grenadeCategoryId === 'he'"
+                  [class.is-ct]="point.teamSide === 'ct'"
+                  [class.is-t]="point.teamSide === 't'"
+                  [style.left.%]="point.x"
+                  [style.top.%]="point.y"
+                  [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
+                  (click)="openPointEditor(point, $event)"
+                >
+                  @if (grenadeCategoryForPoint(point)?.iconUrl; as iconUrl) {
                     <span
-                      class="point-action-icon"
+                      class="map-point-icon"
                       aria-hidden="true"
-                      [style.mask-image]="'url(' + category.iconUrl + ')'"
-                      [style.-webkit-mask-image]="'url(' + category.iconUrl + ')'"
+                      [style.mask-image]="'url(' + iconUrl + ')'"
+                      [style.-webkit-mask-image]="'url(' + iconUrl + ')'"
                     ></span>
                   }
-                  {{ category.label }}
                 </button>
               }
             </div>
-            <button type="button" class="start-point-button" (click)="addStartPoint(menu.pointId, $event)">
-              Add start point
-            </button>
+
+            @if (map.levels.length > 1) {
+              <div class="level-switcher" aria-label="Map level">
+                @for (levelOption of map.levels; track levelOption.id; let index = $index) {
+                  <button
+                    type="button"
+                    [class.is-active]="level.id === levelOption.id"
+                    [attr.aria-label]="levelOption.name"
+                    (click)="selectLevel(levelOption); $event.stopPropagation()"
+                  >
+                    L{{ index + 1 }}
+                  </button>
+                }
+              </div>
+            }
+
+            <div class="zoom-controls" aria-label="Map zoom">
+              <button type="button" aria-label="Zoom in" (click)="zoomIn($event)">+</button>
+              <button type="button" aria-label="Zoom out" (click)="zoomOut($event)">-</button>
+            </div>
+
+            @if (pointActionMenu(); as menu) {
+              <div
+                class="point-action-menu"
+                [style.left.px]="menu.x"
+                [style.top.px]="menu.y"
+                (click)="$event.stopPropagation()"
+              >
+                <span>Add grenade</span>
+                <div class="point-action-grid">
+                  @for (category of grenadeCategories; track category.id) {
+                    <button type="button" (click)="assignGrenadeToPoint(menu.pointId, category, $event)">
+                      @if (category.iconUrl) {
+                        <span
+                          class="point-action-icon"
+                          aria-hidden="true"
+                          [style.mask-image]="'url(' + category.iconUrl + ')'"
+                          [style.-webkit-mask-image]="'url(' + category.iconUrl + ')'"
+                        ></span>
+                      }
+                      {{ category.label }}
+                    </button>
+                  }
+                </div>
+                <button type="button" class="start-point-button" (click)="addStartPoint(menu.pointId, $event)">
+                  Add start point
+                </button>
+              </div>
+            }
           </div>
         }
-      </div>
+      }
 
       @if (selectedPoint(); as point) {
         <aside class="point-details" aria-label="Lineup editor">
@@ -177,17 +205,7 @@
 
           <div class="field">
             <span>Media</span>
-            <label class="media-upload">
-              <input
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                (change)="onMediaFilesSelected($event)"
-              />
-              Add files
-            </label>
             <p class="paste-hint">Ctrl+V adds an image from the clipboard.</p>
-
             <div class="media-grid">
               @for (media of point.media ?? []; track media.id) {
                 <button type="button" (click)="openMediaPreview(media)">
@@ -196,6 +214,32 @@
                   } @else {
                     <video [src]="media.url" muted></video>
                   }
+                </button>
+              }
+              <label class="media-upload">
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  (change)="onMediaFilesSelected($event)"
+                />
+                <span aria-hidden="true">+</span>
+                <small>Add media</small>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <span>Side</span>
+            <div class="toggle-grid is-two-columns">
+              @for (side of teamSideOptions; track side.id) {
+                <button
+                  type="button"
+                  [class.is-active]="point.teamSide === side.id"
+                  (click)="updateSelectedPointTeamSide(side.id)"
+                >
+                  <img [src]="side.iconUrl" alt="" aria-hidden="true" />
+                  {{ side.label }}
                 </button>
               }
             </div>
@@ -237,23 +281,39 @@
           </div>
         </aside>
       } @else {
-        <div class="grenade-filter" aria-label="Grenade categories">
-          @for (category of grenadeCategories; track category.id) {
-            <button
-              class="grenade-button"
-              type="button"
-              [class.is-active]="selectedGrenadeCategoryId() === category.id"
-              (click)="selectGrenadeCategory(category)"
-            >
-              @if (category.iconUrl) {
-                <img [src]="category.iconUrl" alt="" aria-hidden="true" />
-              } @else {
-                <span aria-hidden="true">*</span>
+        @if (appView() === 'map') {
+          <div class="right-controls" aria-label="Map filters">
+            <div class="side-filter" aria-label="Team side">
+              @for (side of teamSideOptions; track side.id) {
+                <button
+                  type="button"
+                  [class.is-active]="selectedTeamSide() === side.id"
+                  (click)="selectTeamSide(side.id)"
+                >
+                  <img [src]="side.iconUrl" alt="" aria-hidden="true" />
+                  <small>{{ side.label }}</small>
+                </button>
               }
-              <small>{{ category.label }}</small>
-            </button>
-          }
-        </div>
+            </div>
+            <div class="grenade-filter" aria-label="Grenade categories">
+              @for (category of grenadeCategories; track category.id) {
+                <button
+                  class="grenade-button"
+                  type="button"
+                  [class.is-active]="selectedGrenadeCategoryId() === category.id"
+                  (click)="selectGrenadeCategory(category)"
+                >
+                  @if (category.iconUrl) {
+                    <img [src]="category.iconUrl" alt="" aria-hidden="true" />
+                  } @else {
+                    <span aria-hidden="true">*</span>
+                  }
+                  <small>{{ category.label }}</small>
+                </button>
+              }
+            </div>
+          </div>
+        }
       }
     </div>
   </section>
