@@ -26,6 +26,7 @@ export type StoredPoint = {
   title: string;
   requirements: string[];
   media: StoredMedia[];
+  heroMediaId?: string;
 };
 
 type PointRecord = Omit<StoredPoint, 'media'> & {
@@ -68,19 +69,26 @@ export class LineupStorage {
     const pointRecords = await this.getAll<PointRecord>(db, POINTS_STORE);
     const mediaRecords = await this.getAll<MediaRecord>(db, MEDIA_STORE);
 
-    return pointRecords.map((point) => ({
-      ...point,
-      media: mediaRecords
+    return pointRecords.map((point) => {
+      const mediaById = new Map(mediaRecords
         .filter((media) => media.pointId === point.id)
-        .map((media) => ({
-          id: media.id,
-          name: media.name,
-          type: media.type,
-          mimeType: media.mimeType,
-          blob: media.blob,
-          url: URL.createObjectURL(media.blob),
-        })),
-    }));
+        .map((media) => [media.id, media]));
+
+      return {
+        ...point,
+        media: point.media
+          .map((media) => mediaById.get(media.id))
+          .filter((media): media is MediaRecord => Boolean(media))
+          .map((media) => ({
+            id: media.id,
+            name: media.name,
+            type: media.type,
+            mimeType: media.mimeType,
+            blob: media.blob,
+            url: URL.createObjectURL(media.blob),
+          })),
+      };
+    });
   }
 
   async savePoint(point: StoredPoint): Promise<void> {

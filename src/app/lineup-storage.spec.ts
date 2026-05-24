@@ -15,6 +15,7 @@ describe('LineupStorage', () => {
       teamSide: 'ct',
       title: 'Window smoke',
       requirements: ['jump', 'left-click'],
+      heroMediaId: 'media-2',
       media: [
         {
           id: 'media-1',
@@ -23,6 +24,14 @@ describe('LineupStorage', () => {
           mimeType: 'image/png',
           blob: new Blob(['image-bytes'], { type: 'image/png' }),
           url: 'blob:test',
+        },
+        {
+          id: 'media-2',
+          name: 'hero.png',
+          type: 'image',
+          mimeType: 'image/png',
+          blob: new Blob(['hero-bytes'], { type: 'image/png' }),
+          url: 'blob:hero',
         },
       ],
     };
@@ -33,7 +42,8 @@ describe('LineupStorage', () => {
     expect(imported).toHaveLength(1);
     expect(imported[0].title).toBe('Window smoke');
     expect(imported[0].teamSide).toBe('ct');
-    expect(imported[0].media).toHaveLength(1);
+    expect(imported[0].heroMediaId).toBe('media-2');
+    expect(imported[0].media.map((media) => media.id)).toEqual(['media-1', 'media-2']);
     expect(await imported[0].media[0].blob.text()).toBe('image-bytes');
   });
 });

@@ -187,99 +187,165 @@
       }
 
       @if (selectedPoint(); as point) {
-        <aside class="point-details" aria-label="Lineup editor">
-          <div class="point-details-header">
-            <span>{{ grenadeCategoryForPoint(point)?.label ?? 'Point' }} {{ point.label }}</span>
-            <button type="button" aria-label="Close" (click)="closePointEditor()">x</button>
-          </div>
-
-          <label class="field">
-            <span>Title</span>
-            <input
-              type="text"
-              [value]="point.title ?? ''"
-              placeholder="Example: Window smoke"
-              (input)="updateSelectedPointTitle($any($event.target).value)"
-            />
-          </label>
-
-          <div class="field">
-            <span>Media</span>
-            <p class="paste-hint">Ctrl+V adds an image from the clipboard.</p>
-            <div class="media-grid">
-              @for (media of point.media ?? []; track media.id) {
-                <button type="button" (click)="openMediaPreview(media)">
-                  @if (media.type === 'image') {
-                    <img [src]="media.url" [alt]="media.name" />
-                  } @else {
-                    <video [src]="media.url" muted></video>
-                  }
-                </button>
-              }
-              <label class="media-upload">
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  (change)="onMediaFilesSelected($event)"
-                />
-                <span aria-hidden="true">+</span>
-                <small>Add media</small>
-              </label>
+        @if (selectedPointMode() === 'view') {
+          <aside class="point-details is-view" aria-label="Lineup details">
+            <div class="point-details-header">
+              <span>Lineup</span>
+              <button type="button" aria-label="Close" (click)="closePointEditor()">x</button>
             </div>
-          </div>
 
-          <div class="field">
-            <span>Side</span>
-            <div class="toggle-grid is-two-columns">
-              @for (side of teamSideOptions; track side.id) {
-                <button
-                  type="button"
-                  [class.is-active]="point.teamSide === side.id"
-                  (click)="updateSelectedPointTeamSide(side.id)"
-                >
-                  <img [src]="side.iconUrl" alt="" aria-hidden="true" />
-                  {{ side.label }}
-                </button>
+            <button
+              class="lineup-hero"
+              type="button"
+              [disabled]="!heroMedia(point)"
+              (click)="heroMedia(point) && openMediaPreview(heroMedia(point)!)"
+            >
+              @if (heroMedia(point); as media) {
+                @if (media.type === 'image') {
+                  <img [src]="media.url" [alt]="media.name" />
+                } @else {
+                  <video [src]="media.url" muted></video>
+                }
+              } @else {
+                <span>No media</span>
               }
-            </div>
-          </div>
+            </button>
 
-          <div class="field">
-            <span>Movement</span>
-            <div class="toggle-grid">
-              @for (requirement of movementRequirements; track requirement.id) {
-                <button
-                  type="button"
-                  [class.is-active]="hasRequirement(point, requirement.id)"
-                  (click)="toggleRequirement(requirement.id, !hasRequirement(point, requirement.id))"
-                >
-                  {{ requirement.label }}
-                </button>
-              }
-            </div>
-          </div>
+            <h2 class="lineup-title">{{ displayTitle(point) }}</h2>
 
-          <div class="field">
-            <span>Mouse</span>
-            <div class="toggle-grid is-two-columns">
-              @for (requirement of mouseRequirements; track requirement.id) {
-                <button
-                  type="button"
-                  [class.is-active]="hasRequirement(point, requirement.id)"
-                  (click)="toggleRequirement(requirement.id, !hasRequirement(point, requirement.id))"
-                >
-                  {{ requirement.label }}
-                </button>
-              }
+            <div class="lineup-condition-group">
+              <span>Movement</span>
+              <div class="condition-list">
+                @for (requirement of selectedRequirements(point, movementRequirements); track requirement.id) {
+                  <em>{{ requirement.label }}</em>
+                } @empty {
+                  <small>None</small>
+                }
+              </div>
             </div>
-          </div>
 
-          <div class="point-actions">
-            <button type="button" class="save-button" (click)="saveSelectedPoint()">Save</button>
-            <button type="button" class="delete-button" (click)="deleteMarker(point.id, $event)">Delete</button>
-          </div>
-        </aside>
+            <div class="lineup-condition-group">
+              <span>Mouse</span>
+              <div class="condition-list">
+                @for (requirement of selectedRequirements(point, mouseRequirements); track requirement.id) {
+                  <em>{{ requirement.label }}</em>
+                } @empty {
+                  <small>None</small>
+                }
+              </div>
+            </div>
+
+            <button type="button" class="edit-button" (click)="editSelectedPoint()">Edit</button>
+          </aside>
+        } @else {
+          <aside class="point-details" aria-label="Lineup editor">
+            <div class="point-details-header">
+              <span>Edit lineup</span>
+              <button type="button" aria-label="Close" (click)="closePointEditor()">x</button>
+            </div>
+
+            <label class="field">
+              <span>Title</span>
+              <input
+                type="text"
+                [value]="point.title ?? ''"
+                placeholder="Example: Window smoke"
+                (input)="updateSelectedPointTitle($any($event.target).value)"
+              />
+            </label>
+
+            <div class="field">
+              <span>Media</span>
+              <p class="paste-hint">Ctrl+V adds an image from the clipboard.</p>
+              <div class="media-grid">
+                @for (media of point.media ?? []; track media.id) {
+                  <div
+                    class="media-tile"
+                    draggable="true"
+                    [class.is-hero]="heroMedia(point)?.id === media.id"
+                    [class.is-dragging]="draggedMediaId() === media.id"
+                    (dragstart)="onMediaDragStart(media.id, $event)"
+                    (dragover)="onMediaDragOver($event)"
+                    (drop)="onMediaDrop(media.id, $event)"
+                    (dragend)="onMediaDragEnd($event)"
+                  >
+                    <button class="hero-button" type="button" aria-label="Set as hero image" (click)="setHeroMedia(media.id, $event)">
+                      ★
+                    </button>
+                    <button class="media-preview-button" type="button" (click)="openMediaPreview(media)">
+                      @if (media.type === 'image') {
+                        <img [src]="media.url" [alt]="media.name" />
+                      } @else {
+                        <video [src]="media.url" muted></video>
+                      }
+                    </button>
+                  </div>
+                }
+                <label class="media-upload">
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    (change)="onMediaFilesSelected($event)"
+                  />
+                  <span aria-hidden="true">+</span>
+                  <small>Add media</small>
+                </label>
+              </div>
+            </div>
+
+            <div class="field">
+              <span>Side</span>
+              <div class="toggle-grid is-two-columns">
+                @for (side of teamSideOptions; track side.id) {
+                  <button
+                    type="button"
+                    [class.is-active]="point.teamSide === side.id"
+                    (click)="updateSelectedPointTeamSide(side.id)"
+                  >
+                    <img [src]="side.iconUrl" alt="" aria-hidden="true" />
+                    {{ side.label }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            <div class="field">
+              <span>Movement</span>
+              <div class="toggle-grid">
+                @for (requirement of movementRequirements; track requirement.id) {
+                  <button
+                    type="button"
+                    [class.is-active]="hasRequirement(point, requirement.id)"
+                    (click)="toggleRequirement(requirement.id, !hasRequirement(point, requirement.id))"
+                  >
+                    {{ requirement.label }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            <div class="field">
+              <span>Mouse</span>
+              <div class="toggle-grid is-two-columns">
+                @for (requirement of mouseRequirements; track requirement.id) {
+                  <button
+                    type="button"
+                    [class.is-active]="hasRequirement(point, requirement.id)"
+                    (click)="toggleRequirement(requirement.id, !hasRequirement(point, requirement.id))"
+                  >
+                    {{ requirement.label }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            <div class="point-actions">
+              <button type="button" class="save-button" (click)="saveSelectedPoint()">Save</button>
+              <button type="button" class="delete-button" (click)="deleteMarker(point.id, $event)">Delete</button>
+            </div>
+          </aside>
+        }
       } @else {
         @if (appView() === 'map') {
           <div class="right-controls" aria-label="Map filters">

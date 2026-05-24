@@ -1,8 +1,42 @@
 :host {
+  --vscode-editor-bg: #1e1e1e;
+  --vscode-side-bar-bg: #252526;
+  --vscode-activity-bar-bg: #333333;
+  --vscode-panel-bg: #2d2d30;
+  --vscode-input-bg: #3c3c3c;
+  --vscode-list-hover-bg: #2a2d2e;
+  --vscode-list-active-bg: #37373d;
+  --vscode-border: #3c3c3c;
+  --vscode-border-muted: rgba(128, 128, 128, 0.22);
+  --vscode-text: #cccccc;
+  --vscode-text-strong: #ffffff;
+  --vscode-text-muted: #8f8f8f;
+  --vscode-text-subtle: #6f6f6f;
+  --vscode-accent: #007acc;
+  --vscode-accent-hover: #0e639c;
+  --vscode-accent-soft: rgba(0, 122, 204, 0.18);
+  --vscode-focus-ring: #007fd4;
+  --vscode-warning: #cca700;
+  --vscode-warning-hover: #d7ba7d;
+  --vscode-error: #f14c4c;
+  --vscode-error-hover: #c74e39;
+  --vscode-shadow: rgba(0, 0, 0, 0.38);
+  --vscode-overlay-bg: rgba(30, 30, 30, 0.92);
+  --vscode-control-bg: rgba(255, 255, 255, 0.06);
+  --vscode-control-hover: rgba(255, 255, 255, 0.1);
+  --vscode-icon-filter: invert(86%) sepia(0%) saturate(12%) hue-rotate(177deg) brightness(94%) contrast(83%);
+  --vscode-icon-active-filter: invert(100%) sepia(0%) saturate(0%) hue-rotate(31deg) brightness(104%) contrast(102%);
+  --team-ct: #4b8dff;
+  --team-t: #d58a38;
+  --grenade-smoke: #8d9498;
+  --grenade-flash: #d7ba7d;
+  --grenade-molotov: #ce9178;
+  --grenade-he: #f14c4c;
+
   display: block;
   min-height: 100dvh;
-  color: #ecf2e8;
-  background: #101312;
+  color: var(--vscode-text);
+  background: var(--vscode-editor-bg);
 }
 
 .app-shell {
@@ -19,8 +53,8 @@
   min-height: 0;
   padding: 22px;
   overflow: hidden;
-  background: #151917;
-  border-right: 1px solid rgba(236, 242, 232, 0.1);
+  background: var(--vscode-side-bar-bg);
+  border-right: 1px solid var(--vscode-border);
 }
 
 .brand {
@@ -36,15 +70,15 @@
   place-items: center;
   width: 48px;
   height: 48px;
-  color: #101312;
+  color: var(--vscode-text-strong);
   font-weight: 900;
-  background: #d8b15f;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--vscode-accent);
+  border: 1px solid color-mix(in srgb, var(--vscode-accent) 72%, var(--vscode-text-strong));
 }
 
 .eyebrow {
   margin: 0 0 5px;
-  color: #9aa89d;
+  color: var(--vscode-text-muted);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -54,7 +88,7 @@
 h1,
 h2 {
   margin: 0;
-  color: #f4f1e6;
+  color: var(--vscode-text-strong);
   font-weight: 800;
   letter-spacing: 0;
 }
@@ -72,7 +106,7 @@ h2 {
   display: grid;
   gap: 8px;
   padding: 24px 0;
-  border-bottom: 1px solid rgba(236, 242, 232, 0.1);
+  border-bottom: 1px solid var(--vscode-border);
 }
 
 .nav-button,
@@ -95,7 +129,7 @@ h2 {
   width: 100%;
   min-height: 42px;
   padding: 0 12px;
-  color: #dfe8dc;
+  color: var(--vscode-text);
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
@@ -104,16 +138,16 @@ h2 {
 }
 
 .nav-button.is-muted {
-  color: #9aa89d;
+  color: var(--vscode-text-muted);
 }
 
 .nav-button.is-active {
-  color: #101312;
-  background: #d8b15f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
 }
 
 .nav-button.is-active .nav-icon {
-  color: #101312;
+  color: var(--vscode-text-strong);
 }
 
 .nav-icon {
@@ -121,7 +155,7 @@ h2 {
   place-items: center;
   width: 24px;
   height: 24px;
-  color: #d8b15f;
+  color: var(--vscode-accent);
 }
 
 .map-list {
@@ -137,7 +171,7 @@ h2 {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-  color: #9aa89d;
+  color: var(--vscode-text-muted);
   font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -159,18 +193,18 @@ h2 {
   gap: 12px;
   min-height: 58px;
   padding: 10px 12px;
-  color: #dfe8dc;
+  color: var(--vscode-text);
   text-align: left;
-  background: #1d241f;
-  border: 1px solid rgba(236, 242, 232, 0.08);
+  background: var(--vscode-panel-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .map-button:hover,
 .map-button.is-active {
-  border-color: rgba(216, 177, 95, 0.64);
-  background: #263126;
+  border-color: var(--vscode-accent);
+  background: var(--vscode-list-active-bg);
 }
 
 .map-button strong,
@@ -180,19 +214,19 @@ h2 {
 }
 
 .map-button strong {
-  color: #f4f1e6;
+  color: var(--vscode-text-strong);
   font-size: 0.98rem;
 }
 
 .map-button small {
   margin-top: 3px;
-  color: #91a18f;
+  color: var(--vscode-text-muted);
   font-size: 0.78rem;
 }
 
 .map-button em {
   flex: 0 0 auto;
-  color: #d8b15f;
+  color: var(--vscode-accent);
   font-size: 0.74rem;
   font-style: normal;
   font-weight: 800;
@@ -206,9 +240,9 @@ h2 {
   width: 100%;
   min-height: 46px;
   margin-top: 16px;
-  color: #101312;
+  color: var(--vscode-text-strong);
   font-weight: 800;
-  background: #d8b15f;
+  background: var(--vscode-accent);
   border: 0;
   border-radius: 8px;
   cursor: default;
@@ -227,10 +261,7 @@ h2 {
   height: 100dvh;
   overflow: hidden;
   padding: 18px;
-  background:
-    linear-gradient(135deg, rgba(67, 111, 99, 0.16), transparent 38%),
-    linear-gradient(315deg, rgba(179, 80, 58, 0.15), transparent 32%),
-    #101312;
+  background: var(--vscode-editor-bg);
 }
 
 .empty-board {
@@ -238,13 +269,13 @@ h2 {
   place-items: center;
   width: min(calc(100dvh - 36px), calc(100vw - 300px - 132px));
   aspect-ratio: 1;
-  border: 1px solid rgba(236, 242, 232, 0.14);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 20px 60px var(--vscode-shadow);
 }
 
 .empty-board span {
-  color: #f4f1e6;
+  color: var(--vscode-text-strong);
   font-size: 1.5rem;
   font-weight: 900;
 }
@@ -254,8 +285,8 @@ h2 {
   gap: 12px;
   width: min(420px, 100%);
   padding: 18px;
-  background: rgba(16, 19, 18, 0.78);
-  border: 1px solid rgba(236, 242, 232, 0.12);
+  background: var(--vscode-panel-bg);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
 }
 
@@ -267,10 +298,10 @@ h2 {
   display: grid;
   place-items: center;
   min-height: 44px;
-  color: #101312;
+  color: var(--vscode-text-strong);
   font: inherit;
   font-weight: 900;
-  background: #d8b15f;
+  background: var(--vscode-accent);
   border: 0;
   border-radius: 8px;
   cursor: pointer;
@@ -282,7 +313,7 @@ h2 {
 
 .settings-error {
   margin: 0;
-  color: #f08b82;
+  color: var(--vscode-error);
   font-size: 0.86rem;
 }
 
@@ -294,10 +325,10 @@ h2 {
   display: grid;
   gap: 6px;
   padding: 6px;
-  background: rgba(16, 19, 18, 0.78);
-  border: 1px solid rgba(236, 242, 232, 0.18);
+  background: var(--vscode-overlay-bg);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 10px 24px var(--vscode-shadow);
   backdrop-filter: blur(8px);
 }
 
@@ -305,17 +336,17 @@ h2 {
   width: 42px;
   height: 36px;
   padding: 0;
-  color: #b7c3b5;
+  color: var(--vscode-text);
   font-weight: 800;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.08);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .level-switcher button.is-active {
-  color: #101312;
-  background: #d8b15f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
 }
 
 .map-stage {
@@ -335,9 +366,9 @@ h2 {
   aspect-ratio: 1;
   flex: 0 1 auto;
   overflow: hidden;
-  border: 1px solid rgba(236, 242, 232, 0.14);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 20px 60px var(--vscode-shadow);
   cursor: crosshair;
   touch-action: none;
 }
@@ -378,30 +409,30 @@ h2 {
   width: 28px;
   height: 28px;
   padding: 0;
-  color: #101312;
+  color: var(--vscode-editor-bg);
   font-size: 0.68rem;
   font-weight: 900;
   line-height: 1;
-  background: #f4f1e6;
-  border: 2px solid rgba(16, 19, 18, 0.82);
+  background: var(--vscode-text);
+  border: 2px solid var(--vscode-editor-bg);
   border-radius: 999px;
   box-shadow:
-    0 0 0 2px rgba(244, 241, 230, 0.4),
-    0 8px 16px rgba(0, 0, 0, 0.35);
+    0 0 0 2px color-mix(in srgb, var(--vscode-text) 38%, transparent),
+    0 8px 16px var(--vscode-shadow);
   cursor: pointer;
   transform: translate(-50%, -50%);
 }
 
 .map-point.is-ct {
   box-shadow:
-    0 0 0 3px #4b8dff,
-    0 8px 16px rgba(0, 0, 0, 0.35);
+    0 0 0 3px var(--team-ct),
+    0 8px 16px var(--vscode-shadow);
 }
 
 .map-point.is-t {
   box-shadow:
-    0 0 0 3px #d58a38,
-    0 8px 16px rgba(0, 0, 0, 0.35);
+    0 0 0 3px var(--team-t),
+    0 8px 16px var(--vscode-shadow);
 }
 
 .map-point:hover {
@@ -410,47 +441,47 @@ h2 {
 }
 
 .map-point.is-bomb {
-  background: #d8b15f;
+  background: var(--vscode-warning);
 }
 
 .map-point.is-spawn {
-  background: #76bbc2;
+  background: var(--vscode-accent-hover);
 }
 
 .map-point.is-lineup {
-  color: #f4f1e6;
-  background: #ad604f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-error-hover);
 }
 
 .map-point.is-custom {
-  color: #101312;
-  background: #cfd4cf;
+  color: var(--vscode-editor-bg);
+  background: var(--vscode-text);
 }
 
 .map-point.is-smoke {
-  background: #9da5a2;
+  background: var(--grenade-smoke);
 }
 
 .map-point.is-flash {
-  background: #f1d15b;
+  background: var(--grenade-flash);
 }
 
 .map-point.is-molotov {
-  background: #de7b32;
+  background: var(--grenade-molotov);
 }
 
 .map-point.is-he {
-  background: #c34c42;
+  background: var(--grenade-he);
 }
 
 .map-point:not(.is-smoke):not(.is-flash):not(.is-molotov):not(.is-he) {
   width: 14px;
   height: 14px;
-  background: #f4f1e6;
+  background: var(--vscode-text);
   border-width: 2px;
   box-shadow:
-    0 0 0 2px rgba(16, 19, 18, 0.68),
-    0 6px 14px rgba(0, 0, 0, 0.42);
+    0 0 0 2px color-mix(in srgb, var(--vscode-editor-bg) 72%, transparent),
+    0 6px 14px var(--vscode-shadow);
 }
 
 .map-point-icon {
@@ -458,7 +489,7 @@ h2 {
   width: 17px;
   height: 17px;
   pointer-events: none;
-  background: #050706;
+  background: var(--vscode-editor-bg);
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
@@ -475,10 +506,10 @@ h2 {
   display: grid;
   gap: 6px;
   padding: 6px;
-  background: rgba(16, 19, 18, 0.78);
-  border: 1px solid rgba(236, 242, 232, 0.18);
+  background: var(--vscode-overlay-bg);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 10px 24px var(--vscode-shadow);
   backdrop-filter: blur(8px);
 }
 
@@ -486,18 +517,18 @@ h2 {
   width: 42px;
   height: 36px;
   padding: 0;
-  color: #b7c3b5;
+  color: var(--vscode-text);
   font-size: 1.1rem;
   font-weight: 900;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.08);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .zoom-controls button:hover {
-  color: #101312;
-  background: #d8b15f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
 }
 
 .grenade-filter {
@@ -518,7 +549,7 @@ h2 {
   grid-template-columns: 1fr;
   gap: 6px;
   padding-bottom: 14px;
-  border-bottom: 1px solid rgba(236, 242, 232, 0.12);
+  border-bottom: 1px solid var(--vscode-border);
 }
 
 .side-filter button {
@@ -527,31 +558,31 @@ h2 {
   gap: 5px;
   min-height: 36px;
   padding: 8px 6px;
-  color: #b7c3b5;
+  color: var(--vscode-text);
   font: inherit;
   font-weight: 900;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.1);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .side-filter button.is-active,
 .side-filter button:hover {
-  color: #101312;
-  background: #d8b15f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
 }
 
 .side-filter img {
   width: 24px;
   height: 24px;
   object-fit: contain;
-  filter: invert(92%) sepia(10%) saturate(251%) hue-rotate(57deg) brightness(102%) contrast(91%);
+  filter: var(--vscode-icon-filter);
 }
 
 .side-filter button.is-active img,
 .side-filter button:hover img {
-  filter: invert(6%) sepia(10%) saturate(484%) hue-rotate(104deg) brightness(96%) contrast(90%);
+  filter: var(--vscode-icon-active-filter);
 }
 
 .side-filter small {
@@ -567,14 +598,14 @@ h2 {
   box-sizing: border-box;
   width: 200px;
   padding: 10px;
-  background: rgba(16, 19, 18, 0.94);
-  border: 1px solid rgba(236, 242, 232, 0.16);
+  background: var(--vscode-overlay-bg);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  box-shadow: 0 18px 42px var(--vscode-shadow);
 }
 
 .point-action-menu > span {
-  color: #9aa89d;
+  color: var(--vscode-text-muted);
   font-size: 0.72rem;
   font-weight: 900;
   text-transform: uppercase;
@@ -592,18 +623,18 @@ h2 {
   gap: 5px;
   min-height: 48px;
   padding: 7px;
-  color: #dfe8dc;
+  color: var(--vscode-text);
   font-size: 0.72rem;
   font-weight: 800;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.1);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .point-action-menu button:hover {
-  color: #101312;
-  background: #d8b15f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
 }
 
 .point-action-icon {
@@ -631,9 +662,13 @@ h2 {
   max-height: calc(100dvh - 36px);
   overflow: auto;
   padding: 14px;
-  background: rgba(16, 19, 18, 0.78);
-  border: 1px solid rgba(236, 242, 232, 0.12);
+  background: var(--vscode-panel-bg);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
+}
+
+.point-details.is-view {
+  gap: 16px;
 }
 
 .point-details-header {
@@ -641,16 +676,16 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: #f4f1e6;
+  color: var(--vscode-text-strong);
   font-weight: 900;
 }
 
 .point-details-header button {
   width: 30px;
   height: 30px;
-  color: #b7c3b5;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.1);
+  color: var(--vscode-text);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 6px;
   cursor: pointer;
 }
@@ -660,8 +695,85 @@ h2 {
   gap: 8px;
 }
 
+.lineup-hero {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  color: var(--vscode-text-muted);
+  font: inherit;
+  font-weight: 900;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.lineup-hero:disabled {
+  cursor: default;
+}
+
+.lineup-hero img,
+.lineup-hero video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lineup-title {
+  margin: 0;
+  color: var(--vscode-text-strong);
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+.lineup-condition-group {
+  display: grid;
+  gap: 8px;
+}
+
+.lineup-condition-group > span {
+  color: var(--vscode-text-muted);
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.condition-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.condition-list em,
+.condition-list small {
+  padding: 5px 8px;
+  color: var(--vscode-text);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 999px;
+}
+
+.edit-button {
+  min-height: 40px;
+  margin-top: auto;
+  color: var(--vscode-text-strong);
+  font: inherit;
+  font-weight: 900;
+  background: var(--vscode-accent);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 .field > span {
-  color: #9aa89d;
+  color: var(--vscode-text-muted);
   font-size: 0.75rem;
   font-weight: 900;
   text-transform: uppercase;
@@ -671,9 +783,9 @@ h2 {
   width: 100%;
   min-height: 38px;
   padding: 0 10px;
-  color: #f4f1e6;
-  background: rgba(236, 242, 232, 0.07);
-  border: 1px solid rgba(236, 242, 232, 0.12);
+  color: var(--vscode-text-strong);
+  background: var(--vscode-input-bg);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
   outline: 0;
 }
@@ -696,10 +808,10 @@ h2 {
   gap: 4px;
   min-height: 36px;
   padding: 0 10px;
-  color: #b7c3b5;
+  color: var(--vscode-text);
   font-weight: 800;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.1);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   cursor: pointer;
 }
@@ -708,19 +820,19 @@ h2 {
   width: 18px;
   height: 18px;
   object-fit: contain;
-  filter: invert(92%) sepia(10%) saturate(251%) hue-rotate(57deg) brightness(102%) contrast(91%);
+  filter: var(--vscode-icon-filter);
 }
 
 .toggle-grid button.is-active img,
 .toggle-grid button:hover img {
-  filter: invert(6%) sepia(10%) saturate(484%) hue-rotate(104deg) brightness(96%) contrast(90%);
+  filter: var(--vscode-icon-active-filter);
 }
 
 .toggle-grid button.is-active,
 .toggle-grid button:hover,
 .media-upload:hover {
-  color: #101312;
-  background: #d8b15f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
 }
 
 .media-upload {
@@ -747,7 +859,7 @@ h2 {
 
 .paste-hint {
   margin: 0;
-  color: #91a18f;
+  color: var(--vscode-text-muted);
   font-size: 0.78rem;
 }
 
@@ -757,13 +869,36 @@ h2 {
   gap: 6px;
 }
 
-.media-grid button {
+.media-tile,
+.media-grid > button {
   aspect-ratio: 1;
+}
+
+.media-tile {
+  position: relative;
+  overflow: hidden;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  cursor: grab;
+}
+
+.media-tile.is-dragging {
+  opacity: 0.54;
+}
+
+.media-tile.is-hero {
+  border-color: var(--vscode-warning-hover);
+  box-shadow: inset 0 0 0 1px var(--vscode-warning-hover);
+}
+
+.media-preview-button {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   padding: 0;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.1);
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
   cursor: pointer;
 }
 
@@ -775,6 +910,29 @@ h2 {
   object-fit: cover;
 }
 
+.hero-button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--vscode-text);
+  background: var(--vscode-overlay-bg);
+  border: 1px solid var(--vscode-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.media-tile.is-hero .hero-button,
+.hero-button:hover {
+  color: var(--vscode-editor-bg);
+  background: var(--vscode-warning-hover);
+}
+
 .point-actions {
   display: grid;
   gap: 8px;
@@ -782,13 +940,13 @@ h2 {
 }
 
 .point-actions .save-button {
-  color: #101312;
-  background: #d8b15f;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
 }
 
 .point-actions .delete-button {
-  color: #f4f1e6;
-  background: #a64038;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-error-hover);
 }
 
 .media-preview {
@@ -798,7 +956,7 @@ h2 {
   display: grid;
   place-items: center;
   padding: 32px;
-  background: rgba(4, 6, 5, 0.86);
+  background: rgba(30, 30, 30, 0.88);
 }
 
 .media-preview > button {
@@ -807,9 +965,9 @@ h2 {
   right: 18px;
   width: 38px;
   height: 38px;
-  color: #f4f1e6;
-  background: rgba(236, 242, 232, 0.12);
-  border: 1px solid rgba(236, 242, 232, 0.16);
+  color: var(--vscode-text-strong);
+  background: var(--vscode-control-hover);
+  border: 1px solid var(--vscode-border);
   border-radius: 8px;
   cursor: pointer;
 }
@@ -827,31 +985,31 @@ h2 {
   gap: 5px;
   min-height: 62px;
   padding: 8px 6px;
-  color: #b7c3b5;
+  color: var(--vscode-text);
   font-weight: 800;
-  background: rgba(236, 242, 232, 0.08);
-  border: 1px solid rgba(236, 242, 232, 0.1);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .grenade-button:hover,
 .grenade-button.is-active {
-  color: #101312;
-  background: #d8b15f;
-  border-color: rgba(216, 177, 95, 0.72);
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
 }
 
 .grenade-button img {
   width: 25px;
   height: 25px;
   object-fit: contain;
-  filter: invert(92%) sepia(10%) saturate(251%) hue-rotate(57deg) brightness(102%) contrast(91%);
+  filter: var(--vscode-icon-filter);
 }
 
 .grenade-button.is-active img,
 .grenade-button:hover img {
-  filter: invert(6%) sepia(10%) saturate(484%) hue-rotate(104deg) brightness(96%) contrast(90%);
+  filter: var(--vscode-icon-active-filter);
 }
 
 .grenade-button span {
@@ -915,7 +1073,7 @@ h2 {
     max-height: 365px;
     min-height: auto;
     border-right: 0;
-    border-bottom: 1px solid rgba(236, 242, 232, 0.1);
+    border-bottom: 1px solid var(--vscode-border);
   }
 
   .map-buttons {

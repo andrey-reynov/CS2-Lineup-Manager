@@ -20,6 +20,7 @@ type MapPoint = {
   title?: string;
   requirements?: string[];
   media?: PointMedia[];
+  heroMediaId?: string;
 };
 
 type PointMedia = StoredMedia;
@@ -73,6 +74,7 @@ type PointActionMenu = {
 };
 
 type AppView = 'home' | 'map' | 'settings';
+type PointMode = 'view' | 'edit';
 
 const GRENADE_CATEGORIES: GrenadeCategory[] = [
   {
@@ -352,9 +354,11 @@ export class App {
   protected readonly mapZoom = signal(1);
   protected readonly mapPan = signal({ x: 0, y: 0 });
   protected readonly selectedPointId = signal<string | null>(null);
+  protected readonly selectedPointMode = signal<PointMode>('view');
   protected readonly pointActionMenu = signal<PointActionMenu | null>(null);
   protected readonly previewMedia = signal<PointMedia | null>(null);
   protected readonly importError = signal<string | null>(null);
+  protected readonly draggedMediaId = signal<string | null>(null);
 
   private readonly storage = new LineupStorage();
   private dragState: DragState | null = null;
@@ -543,6 +547,7 @@ export class App {
     event.stopPropagation();
     if (point.grenadeCategoryId) {
       this.selectedPointId.set(point.id);
+      this.selectedPointMode.set('view');
       this.closePointActionMenu();
       return;
     }
@@ -564,8 +569,10 @@ export class App {
 
   protected closePointEditor(): void {
     this.selectedPointId.set(null);
+    this.selectedPointMode.set('view');
     this.closePointActionMenu();
     this.previewMedia.set(null);
+    this.draggedMediaId.set(null);
   }
 
   protected closePointActionMenu(): void {
@@ -610,6 +617,10 @@ export class App {
   }
 
   protected openMediaPreview(media: PointMedia): void {
+    if (this.draggedMediaId()) {
+      return;
+    }
+
     this.previewMedia.set(media);
   }
 
@@ -621,8 +632,8 @@ export class App {
     const point = this.selectedPoint();
     if (point?.grenadeCategoryId) {
       void this.storage.savePoint(this.toStoredPoint(point));
+      this.selectedPointMode.set('view');
     }
-    this.closePointEditor();
   }
 
   protected assignGrenadeToPoint(pointId: string, category: GrenadeCategory, event: MouseEvent): void {
@@ -633,6 +644,7 @@ export class App {
       teamSide: this.selectedTeamSide(),
     });
     this.selectedPointId.set(pointId);
+    this.selectedPointMode.set('edit');
     this.draftPoint.set(null);
     this.closePointActionMenu();
     const point = this.selectedPoint();
@@ -644,6 +656,74 @@ export class App {
   protected addStartPoint(pointId: string, event: MouseEvent): void {
     event.stopPropagation();
     this.closePointActionMenu();
+  }
+
+  protected editSelectedPoint(): void {
+    this.selectedPointMode.set('edit');
+  }
+
+  protected displayTitle(point: MapPoint): string {
+    const title = point.title?.trim();
+    return title ? title : 'Untitled lineup';
+  }
+
+  protected selectedRequirements(point: MapPoint, requirements: RequirementOption[]): RequirementOption[] {
+    return requirements.filter((requirement) => this.hasRequirement(point, requirement.id));
+  }
+
+  protected heroMedia(point: MapPoint): PointMedia | undefined {
+    const media = point.media ?? [];
+    return media.find((item) => item.id === point.heroMediaId) ?? media[0];
+  }
+
+  protected setHeroMedia(mediaId: string, event: MouseEvent): void {
+    event.stopPropagation();
+    this.updateSelectedPoint({ heroMediaId: mediaId });
+  }
+
+  protected onMediaDragStart(mediaId: string, event: DragEvent): void {
+    event.stopPropagation();
+    this.draggedMediaId.set(mediaId);
+    event.dataTransfer?.setData('text/plain', mediaId);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  protected onMediaDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  protected onMediaDrop(targetMediaId: string, event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const draggedMediaId = this.draggedMediaId() ?? event.dataTransfer?.getData('text/plain');
+    this.draggedMediaId.set(null);
+    if (!draggedMediaId || draggedMediaId === targetMediaId) {
+      return;
+    }
+
+    const point = this.selectedPoint();
+    const media = point?.media ?? [];
+    const fromIndex = media.findIndex((item) => item.id === draggedMediaId);
+    const toIndex = media.findIndex((item) => item.id === targetMediaId);
+    if (fromIndex < 0 || toIndex < 0) {
+      return;
+    }
+
+    const nextMedia = [...media];
+    const [movedMedia] = nextMedia.splice(fromIndex, 1);
+    nextMedia.splice(toIndex, 0, movedMedia);
+    this.updateSelectedPoint({ media: nextMedia });
+  }
+
+  protected onMediaDragEnd(event: DragEvent): void {
+    event.stopPropagation();
+    this.draggedMediaId.set(null);
   }
 
   protected async exportZip(): Promise<void> {
@@ -773,8 +853,10 @@ export class App {
       return;
     }
 
+    const currentMedia = point.media ?? [];
     this.updateSelectedPoint({
-      media: [...(point.media ?? []), ...media],
+      media: [...currentMedia, ...media],
+      heroMediaId: point.heroMediaId ?? currentMedia[0]?.id ?? media[0]?.id,
     });
   }
 
@@ -846,6 +928,7 @@ export class App {
       title: point.title,
       requirements: point.requirements,
       media: point.media,
+      heroMediaId: point.heroMediaId,
     };
   }
 
@@ -867,6 +950,7 @@ export class App {
       title: point.title ?? '',
       requirements: point.requirements ?? [],
       media: point.media ?? [],
+      heroMediaId: point.heroMediaId,
     };
   }
 
