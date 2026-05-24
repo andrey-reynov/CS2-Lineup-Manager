@@ -76,6 +76,8 @@ h2 {
 .map-button,
 .add-map-button,
 .level-switcher button,
+.zoom-controls button,
+.marker-menu button,
 .grenade-button {
   font: inherit;
   letter-spacing: 0;
@@ -270,6 +272,22 @@ h2 {
   border-radius: 8px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
   cursor: crosshair;
+  touch-action: none;
+}
+
+.map-board.is-panning {
+  cursor: grab;
+}
+
+.map-board.is-panning:active {
+  cursor: grabbing;
+}
+
+.map-content {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 .map-image {
@@ -277,6 +295,7 @@ h2 {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
 }
@@ -285,8 +304,8 @@ h2 {
   position: absolute;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   color: #101312;
   font-size: 0.68rem;
@@ -322,7 +341,105 @@ h2 {
 
 .map-point.is-custom {
   color: #101312;
-  background: #f5f06d;
+  background: #cfd4cf;
+}
+
+.map-point.is-smoke {
+  background: #9da5a2;
+}
+
+.map-point.is-flash {
+  background: #f1d15b;
+}
+
+.map-point.is-molotov {
+  background: #de7b32;
+}
+
+.map-point.is-he {
+  background: #c34c42;
+}
+
+.map-point-icon {
+  display: block;
+  width: 17px;
+  height: 17px;
+  pointer-events: none;
+  background: #050706;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.zoom-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  background: rgba(16, 19, 18, 0.78);
+  border: 1px solid rgba(236, 242, 232, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(8px);
+}
+
+.zoom-controls button {
+  width: 42px;
+  height: 36px;
+  padding: 0;
+  color: #b7c3b5;
+  font-size: 1.1rem;
+  font-weight: 900;
+  background: rgba(236, 242, 232, 0.08);
+  border: 1px solid rgba(236, 242, 232, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.zoom-controls button:hover {
+  color: #101312;
+  background: #d8b15f;
+}
+
+.marker-menu {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 4px;
+  min-width: 132px;
+  padding: 6px;
+  background: rgba(16, 19, 18, 0.92);
+  border: 1px solid rgba(236, 242, 232, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+  transform: translate(10px, 10px);
+}
+
+.marker-menu button {
+  min-height: 34px;
+  padding: 0 10px;
+  color: #dfe8dc;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.marker-menu button:hover:not(:disabled) {
+  color: #101312;
+  background: #d8b15f;
+}
+
+.marker-menu button:disabled {
+  color: #6f7a72;
+  cursor: default;
 }
 
 .grenade-filter {
@@ -393,8 +510,8 @@ h2 {
   }
 
   .grenade-filter {
-    grid-template-columns: repeat(5, minmax(58px, 1fr));
-    width: min(100%, 420px);
+    grid-template-columns: repeat(4, minmax(58px, 1fr));
+    width: min(100%, 340px);
   }
 
   .grenade-button {
@@ -448,5 +565,10 @@ h2 {
   .level-switcher {
     top: 10px;
     left: 10px;
+  }
+
+  .zoom-controls {
+    right: 10px;
+    bottom: 10px;
   }
 }

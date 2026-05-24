@@ -10,11 +10,11 @@
 
     <nav class="primary-nav" aria-label="Разделы приложения">
       <button class="nav-button is-muted" type="button">
-        <span class="nav-icon" aria-hidden="true">⌂</span>
+        <span class="nav-icon" aria-hidden="true">H</span>
         Главная
       </button>
       <button class="nav-button is-muted" type="button">
-        <span class="nav-icon" aria-hidden="true">⚙</span>
+        <span class="nav-icon" aria-hidden="true">S</span>
         Настройки
       </button>
     </nav>
@@ -57,13 +57,54 @@
         class="map-board"
         role="img"
         [attr.aria-label]="'Мини-карта ' + selectedMap().name + ', ' + selectedLevel().name"
-        (click)="addPoint($event)"
+        [class.is-panning]="mapZoom() > 1"
+        (pointerdown)="onBoardPointerDown($event)"
+        (pointermove)="onBoardPointerMove($event)"
+        (pointerup)="onBoardPointerUp($event)"
+        (pointercancel)="closeMarkerMenu()"
+        (click)="onBoardClick($event)"
+        (wheel)="onBoardWheel($event)"
       >
-        <img
-          class="map-image"
-          [src]="selectedLevel().imageUrl"
-          [alt]="'Мини-карта ' + selectedMap().name + ', ' + selectedLevel().name"
-        />
+        <div
+          class="map-content"
+          [style.transform]="'translate(' + mapPan().x + 'px, ' + mapPan().y + 'px) scale(' + mapZoom() + ')'"
+        >
+          <img
+            class="map-image"
+            [src]="selectedLevel().imageUrl"
+            [alt]="'Мини-карта ' + selectedMap().name + ', ' + selectedLevel().name"
+          />
+
+          @for (point of currentPoints(); track point.id) {
+            <button
+              class="map-point"
+              type="button"
+              [class.is-spawn]="point.kind === 'spawn'"
+              [class.is-bomb]="point.kind === 'bomb'"
+              [class.is-lineup]="point.kind === 'lineup'"
+              [class.is-custom]="point.kind === 'custom'"
+              [class.is-smoke]="point.grenadeCategoryId === 'smoke'"
+              [class.is-flash]="point.grenadeCategoryId === 'flash'"
+              [class.is-molotov]="point.grenadeCategoryId === 'molotov'"
+              [class.is-he]="point.grenadeCategoryId === 'he'"
+              [style.left.%]="point.x"
+              [style.top.%]="point.y"
+              [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
+              (click)="openMarkerMenu(point, $event)"
+            >
+              @if (grenadeCategoryForPoint(point)?.iconUrl; as iconUrl) {
+                <span
+                  class="map-point-icon"
+                  aria-hidden="true"
+                  [style.mask-image]="'url(' + iconUrl + ')'"
+                  [style.-webkit-mask-image]="'url(' + iconUrl + ')'"
+                ></span>
+              } @else {
+                {{ point.label }}
+              }
+            </button>
+          }
+        </div>
 
         @if (selectedMap().levels.length > 1) {
           <div class="level-switcher" aria-label="Переключатель уровня карты">
@@ -80,21 +121,25 @@
           </div>
         }
 
-        @for (point of currentPoints(); track point.id) {
-          <button
-            class="map-point"
-            type="button"
-            [class.is-spawn]="point.kind === 'spawn'"
-            [class.is-bomb]="point.kind === 'bomb'"
-            [class.is-lineup]="point.kind === 'lineup'"
-            [class.is-custom]="point.kind === 'custom'"
-            [style.left.%]="point.x"
-            [style.top.%]="point.y"
-            [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
+        <div class="zoom-controls" aria-label="Масштаб карты">
+          <button type="button" aria-label="Увеличить карту" (click)="zoomIn($event)">
+            +
+          </button>
+          <button type="button" aria-label="Уменьшить карту" (click)="zoomOut($event)">
+            -
+          </button>
+        </div>
+
+        @if (markerMenu(); as menu) {
+          <div
+            class="marker-menu"
+            [style.left.px]="menu.x"
+            [style.top.px]="menu.y"
             (click)="$event.stopPropagation()"
           >
-            {{ point.label }}
-          </button>
+            <button type="button" disabled (click)="noop($event)">Изменить</button>
+            <button type="button" (click)="deleteMarker(menu.pointId, $event)">Удалить</button>
+          </div>
         }
       </div>
 
