@@ -172,10 +172,39 @@ This workspace is initialized with:
 Useful Windows commands from the project root:
 
 ```powershell
+.\dev.cmd
+.\npmw.cmd run build
+.\npmw.cmd test -- --watch=false
 .\.tools\node-v24.16.0-win-x64\npm.cmd run start
 .\.tools\node-v24.16.0-win-x64\npm.cmd run build
 .\scripts\desktop-dev.cmd
 .\scripts\desktop-build.cmd
+```
+
+For browser preview, run:
+
+```powershell
+.\dev.cmd
+```
+
+Then open:
+
+```text
+http://localhost:4200
+```
+
+If `npm`, `npm start`, `ng serve`, or `ng` are not found in the terminal, use the project-local wrappers:
+
+```powershell
+.\npmw.cmd start
+.\ngw.cmd serve --host 127.0.0.1
+```
+
+The project also includes PATH shims in `bin/`. After opening a new terminal, these commands should work from the project root:
+
+```powershell
+npm start
+ng serve --host 127.0.0.1
 ```
 
 When running Tauri manually in this local setup, Cargo can be pointed to the project-local toolchain:

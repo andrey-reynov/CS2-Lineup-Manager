@@ -14,10 +14,13 @@ describe('App', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should render title', async () => {
+  it('should render the app shell', async () => {
     const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, cs2nades');
+    expect(compiled.querySelector('h1')?.textContent).toContain('CS2 Nades');
+    expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('Dust2');
+    expect(compiled.querySelector('.map-image')).toBeTruthy();
   });
 });
