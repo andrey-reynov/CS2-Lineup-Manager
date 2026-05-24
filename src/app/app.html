@@ -52,92 +52,69 @@
   </aside>
 
   <section class="content" aria-label="Рабочая область карты">
-    <header class="map-header">
-      <div>
-        <p class="eyebrow">Текущая карта</p>
-        <h2>{{ selectedMap().name }}</h2>
-        <p class="map-description">{{ selectedLevel().description }}</p>
-      </div>
+    <div class="map-stage">
+      <div
+        class="map-board"
+        role="img"
+        [attr.aria-label]="'Мини-карта ' + selectedMap().name + ', ' + selectedLevel().name"
+        (click)="addPoint($event)"
+      >
+        <img
+          class="map-image"
+          [src]="selectedLevel().imageUrl"
+          [alt]="'Мини-карта ' + selectedMap().name + ', ' + selectedLevel().name"
+        />
 
-      <div class="tag-list" aria-label="Метки карты">
-        @for (tag of selectedMap().tags; track tag) {
-          <span>{{ tag }}</span>
+        @if (selectedMap().levels.length > 1) {
+          <div class="level-switcher" aria-label="Переключатель уровня карты">
+            @for (level of selectedMap().levels; track level.id; let index = $index) {
+              <button
+                type="button"
+                [class.is-active]="selectedLevel().id === level.id"
+                [attr.aria-label]="level.name"
+                (click)="selectLevel(level); $event.stopPropagation()"
+              >
+                L{{ index + 1 }}
+              </button>
+            }
+          </div>
         }
-      </div>
-    </header>
 
-    @if (selectedMap().levels.length > 1) {
-      <div class="level-switcher" aria-label="Переключатель уровня карты">
-        @for (level of selectedMap().levels; track level.id) {
+        @for (point of currentPoints(); track point.id) {
           <button
+            class="map-point"
             type="button"
-            [class.is-active]="selectedLevel().id === level.id"
-            (click)="selectLevel(level)"
+            [class.is-spawn]="point.kind === 'spawn'"
+            [class.is-bomb]="point.kind === 'bomb'"
+            [class.is-lineup]="point.kind === 'lineup'"
+            [class.is-custom]="point.kind === 'custom'"
+            [style.left.%]="point.x"
+            [style.top.%]="point.y"
+            [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
+            (click)="$event.stopPropagation()"
           >
-            {{ level.name }}
+            {{ point.label }}
           </button>
         }
       </div>
-    }
 
-    <div class="map-stage">
-      <svg
-        class="map-image"
-        viewBox="0 0 430 470"
-        role="img"
-        [attr.aria-label]="'Мини-карта ' + selectedMap().name + ', ' + selectedLevel().name"
-      >
-        <defs>
-          <pattern id="map-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1" />
-          </pattern>
-          <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.24" />
-          </filter>
-        </defs>
-
-        <rect class="map-base" x="16" y="18" width="398" height="434" rx="22" />
-        <rect x="16" y="18" width="398" height="434" rx="22" fill="url(#map-grid)" />
-        <path
-          class="route-line"
-          d="M 78 400 C 124 330, 154 282, 212 238 S 298 154, 356 72"
-        />
-        <path
-          class="route-line is-secondary"
-          d="M 354 386 C 310 332, 280 288, 220 244 S 132 174, 82 86"
-        />
-
-        @for (zone of selectedLevel().zones; track zone.label) {
-          <g filter="url(#soft-shadow)">
-            <rect
-              class="map-zone"
-              [class.tone-sand]="zone.tone === 'sand'"
-              [class.tone-stone]="zone.tone === 'stone'"
-              [class.tone-water]="zone.tone === 'water'"
-              [class.tone-green]="zone.tone === 'green'"
-              [class.tone-red]="zone.tone === 'red'"
-              [attr.x]="zone.x"
-              [attr.y]="zone.y"
-              [attr.width]="zone.width"
-              [attr.height]="zone.height"
-              rx="16"
-            />
-            <text
-              class="zone-label"
-              [attr.x]="zone.x + zone.width / 2"
-              [attr.y]="zone.y + zone.height / 2 + 5"
-              text-anchor="middle"
-            >
-              {{ zone.label }}
-            </text>
-          </g>
+      <div class="grenade-filter" aria-label="Категории гранат">
+        @for (category of grenadeCategories; track category.id) {
+          <button
+            class="grenade-button"
+            type="button"
+            [class.is-active]="selectedGrenadeCategoryId() === category.id"
+            (click)="selectGrenadeCategory(category)"
+          >
+            @if (category.iconUrl) {
+              <img [src]="category.iconUrl" alt="" aria-hidden="true" />
+            } @else {
+              <span aria-hidden="true">*</span>
+            }
+            <small>{{ category.label }}</small>
+          </button>
         }
-
-        <circle class="spawn-marker is-ct" cx="368" cy="410" r="13" />
-        <text class="spawn-label" x="368" y="438" text-anchor="middle">CT</text>
-        <circle class="spawn-marker is-t" cx="62" cy="58" r="13" />
-        <text class="spawn-label" x="62" y="36" text-anchor="middle">T</text>
-      </svg>
+      </div>
     </div>
   </section>
 </main>

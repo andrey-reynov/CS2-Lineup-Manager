@@ -22,5 +22,6 @@ describe('App', () => {
     expect(compiled.querySelector('h1')?.textContent).toContain('CS2 Nades');
     expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('Dust2');
     expect(compiled.querySelector('.map-image')).toBeTruthy();
+    expect(compiled.querySelectorAll('.map-point')).toHaveLength(0);
   });
 });

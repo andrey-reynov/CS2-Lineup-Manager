@@ -207,6 +207,16 @@ npm start
 ng serve --host 127.0.0.1
 ```
 
+## Current Prototype UI
+
+The first screen renders real CS2 radar images exported from VPK assets under:
+
+```text
+public/cs2-assets-smoke/_raw/panorama/images/overheadmaps
+```
+
+Map markers are stored as percentage coordinates relative to the radar image. Left-clicking the map adds a temporary marker at the clicked position, so resizing the window should keep markers anchored to the same map location.
+
 When running Tauri manually in this local setup, Cargo can be pointed to the project-local toolchain:
 
 ```powershell
