@@ -1,4 +1,4 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, HostListener, computed, signal } from '@angular/core';
 
 type MapPoint = {
   id: string;
@@ -7,6 +7,16 @@ type MapPoint = {
   y: number;
   kind: 'spawn' | 'bomb' | 'lineup' | 'custom';
   grenadeCategoryId?: string;
+  title?: string;
+  requirements?: string[];
+  media?: PointMedia[];
+};
+
+type PointMedia = {
+  id: string;
+  name: string;
+  type: 'image' | 'video';
+  url: string;
 };
 
 type MapLevel = {
@@ -31,12 +41,6 @@ type GrenadeCategory = {
   iconUrl?: string;
 };
 
-type MarkerMenu = {
-  pointId: string;
-  x: number;
-  y: number;
-};
-
 type DragState = {
   pointerId: number;
   startClientX: number;
@@ -44,6 +48,17 @@ type DragState = {
   startPanX: number;
   startPanY: number;
   hasMoved: boolean;
+};
+
+type RequirementOption = {
+  id: string;
+  label: string;
+};
+
+type PointActionMenu = {
+  pointId: string;
+  x: number;
+  y: number;
 };
 
 const GRENADE_CATEGORIES: GrenadeCategory[] = [
@@ -67,6 +82,17 @@ const GRENADE_CATEGORIES: GrenadeCategory[] = [
     label: 'HE',
     iconUrl: '/cs2-assets-smoke/_raw/panorama/images/icons/equipment/hegrenade.svg',
   },
+];
+
+const MOVEMENT_REQUIREMENTS: RequirementOption[] = [
+  { id: 'crouch', label: 'Crouch' },
+  { id: 'jump', label: 'Jump' },
+  { id: 'run', label: 'Run' },
+];
+
+const MOUSE_REQUIREMENTS: RequirementOption[] = [
+  { id: 'left-click', label: 'Left click' },
+  { id: 'right-click', label: 'Right click' },
 ];
 
 const DEFAULT_MAPS: TacticalMap[] = [
@@ -281,6 +307,8 @@ const DEFAULT_MAPS: TacticalMap[] = [
 export class App {
   protected readonly maps = DEFAULT_MAPS;
   protected readonly grenadeCategories = GRENADE_CATEGORIES;
+  protected readonly movementRequirements = MOVEMENT_REQUIREMENTS;
+  protected readonly mouseRequirements = MOUSE_REQUIREMENTS;
   protected readonly selectedMapId = signal(DEFAULT_MAPS[0].id);
   protected readonly selectedLevelId = signal(DEFAULT_MAPS[0].levels[0].id);
   protected readonly selectedGrenadeCategoryId = signal(GRENADE_CATEGORIES[0].id);
@@ -288,10 +316,11 @@ export class App {
   protected readonly markerCounters = signal<Record<string, number>>({});
   protected readonly mapZoom = signal(1);
   protected readonly mapPan = signal({ x: 0, y: 0 });
-  protected readonly markerMenu = signal<MarkerMenu | null>(null);
+  protected readonly selectedPointId = signal<string | null>(null);
+  protected readonly pointActionMenu = signal<PointActionMenu | null>(null);
+  protected readonly previewMedia = signal<PointMedia | null>(null);
 
   private dragState: DragState | null = null;
-  private justCreatedPointId: string | null = null;
   private suppressNextBoardClick = false;
 
   protected readonly selectedMap = computed(() => {
@@ -308,24 +337,34 @@ export class App {
     return [
       ...this.selectedLevel().points,
       ...(this.addedPoints()[this.currentLevelKey()] ?? []),
-    ].filter((point) => point.grenadeCategoryId === selectedGrenadeCategoryId);
+    ].filter((point) => !point.grenadeCategoryId || point.grenadeCategoryId === selectedGrenadeCategoryId);
+  });
+
+  protected readonly selectedPoint = computed(() => {
+    const selectedPointId = this.selectedPointId();
+    if (!selectedPointId) {
+      return undefined;
+    }
+
+    return (this.addedPoints()[this.currentLevelKey()] ?? []).find((point) => point.id === selectedPointId);
   });
 
   protected selectMap(map: TacticalMap): void {
     this.selectedMapId.set(map.id);
     this.selectedLevelId.set(map.levels[0].id);
     this.resetMapView();
-    this.closeMarkerMenu();
+    this.closePointEditor();
   }
 
   protected selectLevel(level: MapLevel): void {
     this.selectedLevelId.set(level.id);
     this.resetMapView();
-    this.closeMarkerMenu();
+    this.closePointEditor();
   }
 
   protected selectGrenadeCategory(category: GrenadeCategory): void {
     this.selectedGrenadeCategoryId.set(category.id);
+    this.closePointEditor();
   }
 
   protected grenadeCategoryForPoint(point: MapPoint): GrenadeCategory | undefined {
@@ -339,7 +378,6 @@ export class App {
 
     const board = event.currentTarget as HTMLElement;
     board.setPointerCapture(event.pointerId);
-    this.closeMarkerMenu();
     this.dragState = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
@@ -388,18 +426,17 @@ export class App {
       return;
     }
 
+    this.closePointActionMenu();
     this.addPointFromBoardEvent(event, event.currentTarget as HTMLElement);
   }
 
   protected onBoardWheel(event: WheelEvent): void {
     event.preventDefault();
-    this.closeMarkerMenu();
     this.zoomAt(event.currentTarget as HTMLElement, event.clientX, event.clientY, event.deltaY < 0 ? 0.15 : -0.15);
   }
 
   protected zoomIn(event: MouseEvent): void {
     event.stopPropagation();
-    this.closeMarkerMenu();
     const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
     if (board) {
       const rect = board.getBoundingClientRect();
@@ -409,7 +446,6 @@ export class App {
 
   protected zoomOut(event: MouseEvent): void {
     event.stopPropagation();
-    this.closeMarkerMenu();
     const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
     if (board) {
       const rect = board.getBoundingClientRect();
@@ -417,28 +453,30 @@ export class App {
     }
   }
 
-  protected openMarkerMenu(point: MapPoint, event: MouseEvent): void {
+  protected openPointEditor(point: MapPoint, event: MouseEvent): void {
     event.stopPropagation();
-    if (this.justCreatedPointId === point.id) {
-      this.justCreatedPointId = null;
-      return;
-    }
-
     const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
     if (!board) {
       return;
     }
 
     const rect = board.getBoundingClientRect();
-    this.markerMenu.set({
+    this.selectedPointId.set(null);
+    this.pointActionMenu.set({
       pointId: point.id,
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
     });
   }
 
-  protected closeMarkerMenu(): void {
-    this.markerMenu.set(null);
+  protected closePointEditor(): void {
+    this.selectedPointId.set(null);
+    this.closePointActionMenu();
+    this.previewMedia.set(null);
+  }
+
+  protected closePointActionMenu(): void {
+    this.pointActionMenu.set(null);
   }
 
   protected deleteMarker(pointId: string, event: MouseEvent): void {
@@ -448,35 +486,100 @@ export class App {
       ...points,
       [key]: (points[key] ?? []).filter((point) => point.id !== pointId),
     }));
-    this.closeMarkerMenu();
+    this.closePointEditor();
   }
 
-  protected noop(event: MouseEvent): void {
+  protected updateSelectedPointTitle(value: string): void {
+    this.updateSelectedPoint({ title: value });
+  }
+
+  protected toggleRequirement(requirementId: string, checked: boolean): void {
+    const point = this.selectedPoint();
+    const current = point?.requirements ?? [];
+    const requirements = checked
+      ? Array.from(new Set([...current, requirementId]))
+      : current.filter((id) => id !== requirementId);
+
+    this.updateSelectedPoint({ requirements });
+  }
+
+  protected hasRequirement(point: MapPoint, requirementId: string): boolean {
+    return (point.requirements ?? []).includes(requirementId);
+  }
+
+  protected onMediaFilesSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.files) {
+      this.addMediaFiles(input.files);
+    }
+    input.value = '';
+  }
+
+  protected openMediaPreview(media: PointMedia): void {
+    this.previewMedia.set(media);
+  }
+
+  protected closeMediaPreview(): void {
+    this.previewMedia.set(null);
+  }
+
+  protected saveSelectedPoint(): void {
+    this.closePointEditor();
+  }
+
+  protected assignGrenadeToPoint(pointId: string, category: GrenadeCategory, event: MouseEvent): void {
     event.stopPropagation();
+    this.selectedGrenadeCategoryId.set(category.id);
+    this.updatePointById(pointId, { grenadeCategoryId: category.id });
+    this.selectedPointId.set(pointId);
+    this.closePointActionMenu();
+  }
+
+  protected addStartPoint(pointId: string, event: MouseEvent): void {
+    event.stopPropagation();
+    this.closePointActionMenu();
+  }
+
+  @HostListener('window:paste', ['$event'])
+  protected onPaste(event: ClipboardEvent): void {
+    if (!this.selectedPoint()) {
+      return;
+    }
+
+    const files = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'));
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    this.addMediaFiles(files);
   }
 
   private addPointFromBoardEvent(event: MouseEvent, board: HTMLElement): void {
     const { x, y } = this.getMapPercentFromClientPoint(event.clientX, event.clientY, board);
     const key = this.currentLevelKey();
     const nextPointNumber = (this.markerCounters()[key] ?? 0) + 1;
-    const grenadeCategoryId = this.selectedGrenadeCategoryId();
     const point: MapPoint = {
       id: `${key}:custom:${Date.now()}`,
       label: String(nextPointNumber),
       x,
       y,
       kind: 'custom',
-      grenadeCategoryId,
+      title: '',
+      requirements: [],
+      media: [],
     };
 
-    this.justCreatedPointId = point.id;
     this.markerCounters.update((counters) => ({
       ...counters,
       [key]: nextPointNumber,
     }));
     this.addedPoints.update((points) => ({
       ...points,
-      [key]: [...(points[key] ?? []), point],
+      [key]: [
+        ...(points[key] ?? []).filter((existingPoint) => existingPoint.grenadeCategoryId),
+        point,
+      ],
     }));
   }
 
@@ -510,6 +613,53 @@ export class App {
   private resetMapView(): void {
     this.mapZoom.set(1);
     this.mapPan.set({ x: 0, y: 0 });
+  }
+
+  private addMediaFiles(files: FileList | File[]): void {
+    const point = this.selectedPoint();
+    if (!point) {
+      return;
+    }
+
+    const media = Array.from(files)
+      .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
+      .map((file) => ({
+        id: `${point.id}:media:${Date.now()}:${file.name}`,
+        name: file.name,
+        type: file.type.startsWith('video/') ? 'video' as const : 'image' as const,
+        url: URL.createObjectURL(file),
+      }));
+
+    if (media.length === 0) {
+      return;
+    }
+
+    this.updateSelectedPoint({
+      media: [...(point.media ?? []), ...media],
+    });
+  }
+
+  private updateSelectedPoint(patch: Partial<MapPoint>): void {
+    const selectedPointId = this.selectedPointId();
+    if (!selectedPointId) {
+      return;
+    }
+
+    const key = this.currentLevelKey();
+    this.updatePointInLevel(key, selectedPointId, patch);
+  }
+
+  private updatePointById(pointId: string, patch: Partial<MapPoint>): void {
+    this.updatePointInLevel(this.currentLevelKey(), pointId, patch);
+  }
+
+  private updatePointInLevel(key: string, pointId: string, patch: Partial<MapPoint>): void {
+    this.addedPoints.update((points) => ({
+      ...points,
+      [key]: (points[key] ?? []).map((point) => (
+        point.id === pointId ? { ...point, ...patch } : point
+      )),
+    }));
   }
 
   private getMapPercentFromClientPoint(clientX: number, clientY: number, board: HTMLElement): Pick<MapPoint, 'x' | 'y'> {

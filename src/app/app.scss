@@ -77,8 +77,10 @@ h2 {
 .add-map-button,
 .level-switcher button,
 .zoom-controls button,
-.marker-menu button,
-.grenade-button {
+.point-action-menu button,
+.grenade-button,
+.point-details button,
+.point-details input {
   font: inherit;
   letter-spacing: 0;
 }
@@ -275,6 +277,10 @@ h2 {
   touch-action: none;
 }
 
+.map-stage.has-point-details .map-board {
+  width: min(calc(100dvh - 36px), calc(100vw - 300px - 360px));
+}
+
 .map-board.is-panning {
   cursor: grab;
 }
@@ -360,6 +366,16 @@ h2 {
   background: #c34c42;
 }
 
+.map-point:not(.is-smoke):not(.is-flash):not(.is-molotov):not(.is-he) {
+  width: 14px;
+  height: 14px;
+  background: #f4f1e6;
+  border-width: 2px;
+  box-shadow:
+    0 0 0 2px rgba(16, 19, 18, 0.68),
+    0 6px 14px rgba(0, 0, 0, 0.42);
+}
+
 .map-point-icon {
   display: block;
   width: 17px;
@@ -407,46 +423,245 @@ h2 {
   background: #d8b15f;
 }
 
-.marker-menu {
-  position: absolute;
-  z-index: 4;
-  display: grid;
-  gap: 4px;
-  min-width: 132px;
-  padding: 6px;
-  background: rgba(16, 19, 18, 0.92);
-  border: 1px solid rgba(236, 242, 232, 0.16);
-  border-radius: 8px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
-  transform: translate(10px, 10px);
-}
-
-.marker-menu button {
-  min-height: 34px;
-  padding: 0 10px;
-  color: #dfe8dc;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.marker-menu button:hover:not(:disabled) {
-  color: #101312;
-  background: #d8b15f;
-}
-
-.marker-menu button:disabled {
-  color: #6f7a72;
-  cursor: default;
-}
-
 .grenade-filter {
   display: grid;
   flex: 0 0 auto;
   gap: 8px;
   width: 72px;
+}
+
+.point-action-menu {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  width: 180px;
+  padding: 10px;
+  background: rgba(16, 19, 18, 0.94);
+  border: 1px solid rgba(236, 242, 232, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  transform: translate(10px, 10px);
+}
+
+.point-action-menu > span {
+  color: #9aa89d;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.point-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.point-action-menu button {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  min-height: 48px;
+  padding: 7px;
+  color: #dfe8dc;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(236, 242, 232, 0.08);
+  border: 1px solid rgba(236, 242, 232, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.point-action-menu button:hover {
+  color: #101312;
+  background: #d8b15f;
+}
+
+.point-action-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.point-action-menu .start-point-button {
+  min-height: 38px;
+}
+
+.point-details {
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  gap: 14px;
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  padding: 14px;
+  background: rgba(16, 19, 18, 0.78);
+  border: 1px solid rgba(236, 242, 232, 0.12);
+  border-radius: 8px;
+}
+
+.point-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #f4f1e6;
+  font-weight: 900;
+}
+
+.point-details-header button {
+  width: 30px;
+  height: 30px;
+  color: #b7c3b5;
+  background: rgba(236, 242, 232, 0.08);
+  border: 1px solid rgba(236, 242, 232, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field > span {
+  color: #9aa89d;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.field input[type="text"] {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #f4f1e6;
+  background: rgba(236, 242, 232, 0.07);
+  border: 1px solid rgba(236, 242, 232, 0.12);
+  border-radius: 8px;
+  outline: 0;
+}
+
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.toggle-grid.is-two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.toggle-grid button,
+.point-actions button,
+.media-upload {
+  min-height: 36px;
+  padding: 0 10px;
+  color: #b7c3b5;
+  font-weight: 800;
+  background: rgba(236, 242, 232, 0.08);
+  border: 1px solid rgba(236, 242, 232, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.toggle-grid button.is-active,
+.toggle-grid button:hover,
+.media-upload:hover {
+  color: #101312;
+  background: #d8b15f;
+}
+
+.media-upload {
+  display: grid;
+  place-items: center;
+}
+
+.media-upload input {
+  display: none;
+}
+
+.paste-hint {
+  margin: 0;
+  color: #91a18f;
+  font-size: 0.78rem;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.media-grid button {
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  background: rgba(236, 242, 232, 0.08);
+  border: 1px solid rgba(236, 242, 232, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.media-grid img,
+.media-grid video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.point-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.point-actions .save-button {
+  color: #101312;
+  background: #d8b15f;
+}
+
+.point-actions .delete-button {
+  color: #f4f1e6;
+  background: #a64038;
+}
+
+.media-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(4, 6, 5, 0.86);
+}
+
+.media-preview > button {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: 38px;
+  height: 38px;
+  color: #f4f1e6;
+  background: rgba(236, 242, 232, 0.12);
+  border: 1px solid rgba(236, 242, 232, 0.16);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.media-preview img,
+.media-preview video {
+  max-width: min(100%, 1200px);
+  max-height: 100%;
+  border-radius: 8px;
 }
 
 .grenade-button {
@@ -512,6 +727,12 @@ h2 {
   .grenade-filter {
     grid-template-columns: repeat(4, minmax(58px, 1fr));
     width: min(100%, 340px);
+  }
+
+  .point-details {
+    flex-basis: auto;
+    width: min(100%, 420px);
+    max-height: none;
   }
 
   .grenade-button {
