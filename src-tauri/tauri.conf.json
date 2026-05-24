@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "CS2 Nades",
+  "version": "0.1.0",
+  "identifier": "com.cs2nades.desktop",
+  "build": {
+    "frontendDist": "../dist/cs2nades/browser",
+    "devUrl": "http://localhost:4200",
+    "beforeDevCommand": ".\\.tools\\node-v24.16.0-win-x64\\npm.cmd run start",
+    "beforeBuildCommand": ".\\.tools\\node-v24.16.0-win-x64\\npm.cmd run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CS2 Nades",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}
