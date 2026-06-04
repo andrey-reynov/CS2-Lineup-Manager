@@ -107,6 +107,13 @@ describe('App', () => {
 
     expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('Dust2');
     expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('0 lineups');
+    expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('CT: 0 lineups');
+    expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('T: 0 lineups');
+    expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('Smoke: 0');
+    expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('Flash: 0');
+    expect(compiled.querySelectorAll('.map-lineup-breakdown')).toHaveLength(1);
+    expect(compiled.querySelectorAll('.map-nade-breakdown')).toHaveLength(1);
+    expect(compiled.querySelectorAll('.map-nade-breakdown i')).toHaveLength(3);
     expect(compiled.querySelector('.map-image')).toBeTruthy();
     expect(compiled.querySelector('.map-bottom-rail')).toBeTruthy();
     expect(compiled.querySelector('.right-controls')).toBeFalsy();

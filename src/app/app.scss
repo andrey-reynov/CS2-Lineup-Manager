@@ -304,8 +304,16 @@ h2 {
   background: var(--vscode-list-active-bg);
 }
 
+.map-button.is-active {
+  min-height: 154px;
+  padding-block: 14px;
+  box-shadow: inset 3px 0 0 var(--vscode-accent);
+}
+
 .map-button strong,
-.map-button small {
+.map-button small,
+.map-lineup-breakdown,
+.map-nade-breakdown {
   position: relative;
   z-index: 1;
   display: block;
@@ -320,6 +328,56 @@ h2 {
   margin-top: 3px;
   color: var(--vscode-text-muted);
   font-size: 0.78rem;
+}
+
+.map-lineup-breakdown,
+.map-nade-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 11px;
+  color: var(--vscode-text-strong);
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.map-lineup-breakdown i {
+  width: 1px;
+  height: 12px;
+  background: var(--vscode-border);
+}
+
+.map-nade-breakdown {
+  display: flex;
+  margin-top: 7px;
+  color: var(--vscode-text-muted);
+}
+
+.map-nade-breakdown span {
+  display: inline;
+  min-width: 0;
+  padding: 0;
+  overflow: visible;
+  font-size: inherit;
+  font-weight: 400;
+  line-height: inherit;
+  text-overflow: clip;
+  white-space: normal;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.map-nade-breakdown i {
+  color: var(--vscode-text-subtle);
+  font-style: normal;
+}
+
+.map-nade-breakdown i::before {
+  content: "|";
 }
 
 .add-map-button {

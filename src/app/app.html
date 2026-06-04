@@ -30,6 +30,26 @@
                 {{ mapLineupCount(map) }}
                 {{ mapLineupCount(map) === 1 ? 'lineup' : 'lineups' }}
               </small>
+              @if (selectedMap()?.id === map.id) {
+                <em class="map-lineup-breakdown">
+                  CT: {{ mapTeamLineupCount(map, 'ct') }}
+                  {{ mapTeamLineupCount(map, 'ct') === 1 ? 'lineup' : 'lineups' }}
+                  <i aria-hidden="true"></i>
+                  T: {{ mapTeamLineupCount(map, 't') }}
+                  {{ mapTeamLineupCount(map, 't') === 1 ? 'lineup' : 'lineups' }}
+                </em>
+                <em class="map-nade-breakdown">
+                  @for (category of grenadeCategories; track category.id; let isLast = $last) {
+                    <span>
+                      {{ category.label }}:
+                      {{ mapGrenadeLineupCount(map, category.id) }}
+                    </span>
+                    @if (!isLast) {
+                      <i aria-hidden="true"></i>
+                    }
+                  }
+                </em>
+              }
             </span>
           </button>
         }

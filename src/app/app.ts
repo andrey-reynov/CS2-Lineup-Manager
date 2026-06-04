@@ -656,6 +656,16 @@ export class App {
     return this.allSavedPoints().filter((point) => point.mapId === map.id).length;
   }
 
+  protected mapTeamLineupCount(map: TacticalMap, teamSide: TeamSide): number {
+    return this.allSavedPoints().filter((point) => point.mapId === map.id && point.teamSide === teamSide).length;
+  }
+
+  protected mapGrenadeLineupCount(map: TacticalMap, grenadeCategoryId: GrenadeCategoryId): number {
+    return this.allSavedPoints().filter((point) => (
+      point.mapId === map.id && point.grenadeCategoryId === grenadeCategoryId
+    )).length;
+  }
+
   constructor() {
     void this.loadStoredPoints();
   }
