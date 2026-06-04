@@ -1,4 +1,10 @@
-<main class="app-shell">
+<main class="app-shell" [class.is-sidebar-closed]="!sidebarOpen()">
+  @if (!sidebarOpen()) {
+    <button class="sidebar-open-button" type="button" aria-label="Open navigation menu" (click)="openSidebar()">
+      CS
+    </button>
+  }
+
   <aside class="sidebar" aria-label="Primary navigation">
     <section class="brand">
       <div class="brand-mark" aria-hidden="true">CS</div>
@@ -6,6 +12,9 @@
         <p class="eyebrow">Counter-Strike 2</p>
         <h1>CS2 Nades</h1>
       </div>
+      <button class="sidebar-close-button" type="button" aria-label="Close navigation menu" (click)="closeSidebar()">
+        x
+      </button>
     </section>
 
     <section class="map-list" aria-label="Map list">
@@ -31,14 +40,14 @@
                 {{ mapLineupCount(map) === 1 ? 'lineup' : 'lineups' }}
               </small>
               @if (selectedMap()?.id === map.id) {
-                <em class="map-lineup-breakdown">
+                <em class="map-lineup-breakdown" animate.enter="map-details-enter" animate.leave="map-details-leave">
                   CT: {{ mapTeamLineupCount(map, 'ct') }}
                   {{ mapTeamLineupCount(map, 'ct') === 1 ? 'lineup' : 'lineups' }}
                   <i aria-hidden="true"></i>
                   T: {{ mapTeamLineupCount(map, 't') }}
                   {{ mapTeamLineupCount(map, 't') === 1 ? 'lineup' : 'lineups' }}
                 </em>
-                <em class="map-nade-breakdown">
+                <em class="map-nade-breakdown" animate.enter="map-details-enter" animate.leave="map-details-leave">
                   @for (category of grenadeCategories; track category.id; let isLast = $last) {
                     <span>
                       {{ category.label }}:
@@ -89,6 +98,17 @@
       } @else if (appView() === 'settings') {
         <section class="settings-panel" aria-label="Settings">
           <h2>Settings</h2>
+          <section class="settings-group is-paths" aria-label="Content workspace">
+            <div>
+              <strong>Content workspace</strong>
+              <small>User-editable maps, metadata, inboxes, and media folders.</small>
+            </div>
+            @if (contentWorkspace(); as workspace) {
+              <code>{{ workspace.contentDir }}</code>
+            } @else {
+              <code>Available in the desktop app after startup.</code>
+            }
+          </section>
           <label class="settings-toggle">
             <span>
               <strong>Show menu scrollbar</strong>
@@ -300,6 +320,15 @@
 
             <div class="map-bottom-rail" aria-label="Map filters and zoom">
               <div class="side-filter" aria-label="Team side">
+                <button
+                  type="button"
+                  class="is-any-side"
+                  [class.is-active]="selectedTeamSide() === 'any'"
+                  (click)="selectTeamSide('any')"
+                >
+                  <span class="rail-icon is-any-team" aria-hidden="true"></span>
+                  <small>Any</small>
+                </button>
                 @for (side of teamSideOptions; track side.id) {
                   <button
                     type="button"
@@ -348,10 +377,6 @@
                   </button>
                 }
               </div>
-              <div class="zoom-controls" aria-label="Map zoom">
-                <button type="button" aria-label="Zoom out" (click)="zoomOut($event)">-</button>
-                <button type="button" aria-label="Zoom in" (click)="zoomIn($event)">+</button>
-              </div>
             </div>
 
             @if (pointActionMenu(); as menu) {
@@ -385,7 +410,7 @@
 
       @if (selectedPoint(); as point) {
         @if (selectedPointMode() === 'view') {
-          <aside class="point-details is-view" aria-label="Lineup details">
+          <aside class="point-details is-view" aria-label="Lineup details" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
             <div
               class="panel-resize-edge is-right"
               role="separator"
@@ -458,7 +483,7 @@
             <button type="button" class="edit-button" (click)="editSelectedPoint()">Edit</button>
           </aside>
         } @else {
-          <aside class="point-details" aria-label="Lineup editor">
+          <aside class="point-details" aria-label="Lineup editor" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
             <div
               class="panel-resize-edge is-right"
               role="separator"

@@ -66,6 +66,29 @@ type ExportManifest = {
   points: Array<Omit<PointRecord, 'media'> & { media: ExportMedia[] }>;
 };
 
+type ContentLineupMedia = {
+  id: string;
+  name: string;
+  role: MediaRole;
+  type: MediaKind;
+  mimeType: string;
+  path: string;
+};
+
+type ContentLineup = {
+  id: string;
+  title: string;
+  label: string;
+  mapId: string;
+  levelId: string;
+  teamSide: TeamSide;
+  grenadeCategoryId: GrenadeCategoryId;
+  resultPoint: Pick<StoredPoint, 'x' | 'y'>;
+  trajectory: StoredTrajectory;
+  requirements: string[];
+  media: ContentLineupMedia[];
+};
+
 const DB_NAME = 'cs2nades-lineups';
 const DB_VERSION = 1;
 const POINTS_STORE = 'points';
@@ -199,13 +222,14 @@ export class LineupStorage {
 
   async exportZip(points: StoredPoint[]): Promise<Blob> {
     const zip = new JSZip();
+    const contentLineups = new Map<string, ContentLineup[]>();
     const manifest: ExportManifest = {
       version: 1,
       exportedAt: new Date().toISOString(),
       points: points.map((point) => ({
         ...point,
         media: point.media.map((media) => {
-          const fileName = `media/${media.id}-${this.safeFileName(media.name)}`;
+          const fileName = this.contentMediaPath(point, media);
           zip.file(fileName, media.blob);
           return {
             id: media.id,
@@ -218,6 +242,39 @@ export class LineupStorage {
         }),
       })),
     };
+
+    for (const point of manifest.points) {
+      const mapLineups = contentLineups.get(point.mapId) ?? [];
+      mapLineups.push({
+        id: point.id,
+        title: point.title,
+        label: point.label,
+        mapId: point.mapId,
+        levelId: point.levelId,
+        teamSide: point.teamSide,
+        grenadeCategoryId: point.grenadeCategoryId,
+        resultPoint: { x: point.x, y: point.y },
+        trajectory: point.trajectory ?? { vertices: [] },
+        requirements: point.requirements,
+        media: point.media.map((media) => ({
+          id: media.id,
+          name: media.name,
+          role: media.role ?? 'detail',
+          type: media.type,
+          mimeType: media.mimeType,
+          path: media.fileName,
+        })),
+      });
+      contentLineups.set(point.mapId, mapLineups);
+    }
+
+    zip.file('Content/README.txt', this.contentReadme());
+    for (const [mapId, lineups] of contentLineups) {
+      const mapDir = `Content/Maps/${this.safeFolderName(mapId)}`;
+      zip.file(`${mapDir}/Meta/map.json`, JSON.stringify({ id: mapId }, null, 2));
+      zip.file(`${mapDir}/Meta/lineups.json`, JSON.stringify({ version: 1, mapId, lineups }, null, 2));
+      zip.folder(`${mapDir}/User/Inbox`);
+    }
 
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
     return zip.generateAsync({ type: 'blob' });
@@ -308,5 +365,37 @@ export class LineupStorage {
 
   private safeFileName(name: string): string {
     return name.replace(/[^\w.-]+/g, '_');
+  }
+
+  private contentMediaPath(point: StoredPoint, media: StoredMedia): string {
+    const lineupName = this.safeFolderName(point.title || point.label || point.id);
+    const role = media.role ?? 'detail';
+    return [
+      'Content',
+      'Maps',
+      this.safeFolderName(point.mapId),
+      'User',
+      'Media',
+      lineupName,
+      `${role}-${media.id}-${this.safeFileName(media.name)}`,
+    ].join('/');
+  }
+
+  private safeFolderName(name: string): string {
+    const safeName = name.replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '_').replace(/\s+/g, ' ').trim();
+    return safeName || '_Unknown';
+  }
+
+  private contentReadme(): string {
+    return [
+      'CS2 Nades content workspace',
+      '',
+      'Content/Maps/<map>/Meta contains app-readable JSON metadata.',
+      'Content/Maps/<map>/User contains user-owned screenshots, videos, inbox files, and future generated content.',
+      'System or app binary folders are reserved for application internals and should not be edited manually.',
+      '',
+      'The root manifest.json is kept for backwards-compatible imports.',
+      '',
+    ].join('\n');
   }
 }

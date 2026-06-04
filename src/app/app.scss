@@ -63,6 +63,44 @@
   border-radius: 10px;
   box-shadow: 0 18px 48px var(--vscode-shadow);
   backdrop-filter: blur(16px);
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease,
+    box-shadow 180ms ease;
+  will-change: transform, opacity;
+}
+
+.app-shell.is-sidebar-closed .sidebar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(-100% - 36px));
+  box-shadow: none;
+}
+
+.sidebar-open-button {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: var(--vscode-text-strong);
+  font: inherit;
+  font-weight: 900;
+  background: color-mix(in srgb, var(--vscode-side-bar-bg) 88%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px var(--vscode-shadow);
+  cursor: pointer;
+  animation: sidebar-open-button-in 160ms ease both;
+  backdrop-filter: blur(16px);
+}
+
+.sidebar-open-button:hover {
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
 }
 
 .panel-resize-edge {
@@ -87,10 +125,30 @@
 
 .brand {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr) 32px;
   align-items: center;
   gap: 14px;
   min-height: 56px;
+}
+
+.sidebar-close-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--vscode-text-muted);
+  font: inherit;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sidebar-close-button:hover {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
 }
 
 .brand-mark {
@@ -143,7 +201,6 @@ h2 {
 .map-button,
 .add-map-button,
 .level-switcher button,
-.zoom-controls button,
 .point-action-menu button,
 .grenade-button,
 .all-filter-button,
@@ -258,6 +315,12 @@ h2 {
   border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   cursor: pointer;
+  transition:
+    min-height 180ms ease,
+    padding 180ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 180ms ease;
 }
 
 .map-button::before,
@@ -378,6 +441,14 @@ h2 {
 
 .map-nade-breakdown i::before {
   content: "|";
+}
+
+.map-details-enter {
+  animation: map-details-in 180ms ease both;
+}
+
+.map-details-leave {
+  animation: map-details-out 140ms ease both;
 }
 
 .add-map-button {
@@ -535,6 +606,22 @@ h2 {
 .settings-group {
   align-items: stretch;
   flex-direction: column;
+}
+
+.settings-group.is-paths code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 9px 10px;
+  color: var(--vscode-text);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--vscode-input-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
 }
 
 .settings-swatch-grid {
@@ -890,33 +977,6 @@ h2 {
   -webkit-mask-size: contain;
 }
 
-.zoom-controls {
-  display: flex;
-  gap: 6px;
-  padding-left: 8px;
-  border-left: 1px solid var(--vscode-border-muted);
-}
-
-.zoom-controls button {
-  width: 52px;
-  height: 52px;
-  padding: 0;
-  color: var(--vscode-text);
-  font-size: 0.76rem;
-  font-weight: 400;
-  background: var(--vscode-control-bg);
-  border: 1px solid var(--vscode-border-muted);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.zoom-controls button:hover,
-.zoom-controls button.is-active {
-  color: var(--vscode-text-strong);
-  background: var(--vscode-accent);
-  border-color: var(--vscode-focus-ring);
-}
-
 .grenade-filter {
   display: flex;
   gap: 6px;
@@ -1018,6 +1078,17 @@ h2 {
   border-color: var(--team-t);
 }
 
+.side-filter button.is-any-side.is-active,
+.side-filter button.is-any-side:hover {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--team-ct) 34%, var(--vscode-control-bg)) 0 49%,
+      color-mix(in srgb, var(--team-t) 34%, var(--vscode-control-bg)) 51% 100%
+    );
+  border-color: color-mix(in srgb, var(--team-ct) 50%, var(--team-t));
+}
+
 .rail-icon {
   display: block;
   width: 22px;
@@ -1029,6 +1100,16 @@ h2 {
   -webkit-mask-position: center;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-size: contain;
+}
+
+.rail-icon.is-any-team {
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(135deg, var(--team-ct) 0 49%, var(--team-t) 51% 100%);
+  border: 1px solid color-mix(in srgb, var(--team-ct) 50%, var(--team-t));
+  border-radius: 6px;
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 
 .side-filter small {
@@ -1116,6 +1197,14 @@ h2 {
   border-radius: 10px;
   box-shadow: 0 18px 48px var(--vscode-shadow);
   backdrop-filter: blur(16px);
+}
+
+.panel-slide-enter {
+  animation: panel-slide-in-right 180ms ease both;
+}
+
+.panel-slide-leave {
+  animation: panel-slide-out-right 150ms ease both;
 }
 
 .point-details.is-view {
@@ -1647,4 +1736,64 @@ h2 {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@keyframes sidebar-open-button-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(34px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-slide-out-right {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(34px);
+  }
+}
+
+@keyframes map-details-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes map-details-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
 }

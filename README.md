@@ -125,6 +125,21 @@ my-mirage-smokes.cs2nades-pack.zip
 
 This format should allow users to share smoke sets without needing an online account.
 
+The desktop app also maintains a user-facing content workspace under app data:
+
+```text
+Content/
+  Maps/
+    <map name>/
+      Meta/
+      User/
+        Inbox/
+        Media/
+System/
+```
+
+See [docs/content-workspace.md](docs/content-workspace.md) for the folder contract used by exports, future scripts, generated content, and manual media drops.
+
 ## Development Roadmap
 
 1. Create the Angular application.

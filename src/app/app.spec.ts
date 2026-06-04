@@ -96,6 +96,24 @@ describe('App', () => {
     expect(compiled.querySelectorAll('.map-point')).toHaveLength(0);
   });
 
+  it('should close and reopen the navigation panel', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.sidebar-close-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(true);
+    expect(compiled.querySelector('.sidebar-open-button')).toBeTruthy();
+
+    (compiled.querySelector('.sidebar-open-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(false);
+  });
+
   it('should show the selected map workspace', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
@@ -119,7 +137,7 @@ describe('App', () => {
     expect(compiled.querySelector('.right-controls')).toBeFalsy();
   });
 
-  it('should show every grenade category for the selected side when the All nade filter is active', async () => {
+  it('should show every grenade category for the selected team filter when the All nade filter is active', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -176,8 +194,13 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect(compiled.querySelector('.all-filter-button')?.classList.contains('is-active')).toBe(true);
-    expect(compiled.querySelectorAll('.map-point')).toHaveLength(2);
+    expect(compiled.querySelectorAll('.map-point')).toHaveLength(3);
     expect(compiled.querySelector('.grenade-filter .all-filter-button')).toBeTruthy();
+    expect(
+      (Array.from(compiled.querySelectorAll('.side-filter button')) as HTMLButtonElement[])
+        .find((button) => button.textContent?.trim() === 'Any')
+        ?.classList.contains('is-active'),
+    ).toBe(true);
 
     (Array.from(compiled.querySelectorAll('.side-filter button')) as HTMLButtonElement[])
       .find((button) => button.textContent?.trim() === 'T')
@@ -188,28 +211,17 @@ describe('App', () => {
     expect(compiled.querySelectorAll('.map-point')).toHaveLength(1);
   });
 
-  it('should zoom with normalized plus and minus buttons', async () => {
+  it('should hide map zoom buttons from the bottom rail', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    const app = fixture.componentInstance as any;
     (compiled.querySelector('.map-button') as HTMLButtonElement).click();
     fixture.detectChanges();
-    const board = compiled.querySelector('.map-board') as HTMLElement;
-    setBoardRect(board);
 
-    const zoomButtons = compiled.querySelectorAll('.zoom-controls button') as NodeListOf<HTMLButtonElement>;
-    zoomButtons[1].click();
-    fixture.detectChanges();
-
-    expect(app.mapZoom()).toBe(1.25);
-
-    zoomButtons[0].click();
-    fixture.detectChanges();
-
-    expect(app.mapZoom()).toBe(1);
-    expect(app.mapPan()).toEqual({ x: 0, y: 0 });
+    expect(compiled.querySelector('.map-bottom-rail .zoom-controls')).toBeFalsy();
+    expect(Array.from(compiled.querySelectorAll('.side-filter button')).map((button) => button.textContent?.trim()))
+      .toEqual(['Any', 'CT', 'T']);
   });
 
   it('should hide menu scrollbar by default and reveal it from settings', async () => {

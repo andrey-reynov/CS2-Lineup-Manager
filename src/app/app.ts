@@ -1,4 +1,5 @@
 import { Component, HostBinding, HostListener, computed, signal } from '@angular/core';
+import { ContentWorkspace, ContentWorkspaceService } from './content-workspace';
 import {
   GrenadeCategoryId,
   LineupStorage,
@@ -83,6 +84,7 @@ type PointActionMenu = {
 
 type AppView = 'home' | 'map' | 'settings';
 type PointMode = 'view' | 'edit';
+type TeamSideFilter = TeamSide | 'any';
 type TrajectoryEditMode = 'create' | 'edit';
 type TrajectoryDragTarget =
   | { type: 'result'; pointId: string }
@@ -485,10 +487,11 @@ export class App {
   protected readonly movementRequirements = MOVEMENT_REQUIREMENTS;
   protected readonly mouseRequirements = MOUSE_REQUIREMENTS;
   protected readonly appView = signal<AppView>('home');
+  protected readonly sidebarOpen = signal(true);
   protected readonly selectedMapId = signal<string | null>(null);
   protected readonly selectedLevelId = signal(DEFAULT_MAPS[0].levels[0].id);
   protected readonly selectedGrenadeCategoryId = signal(GRENADE_CATEGORIES[0].id);
-  protected readonly selectedTeamSide = signal<TeamSide>('ct');
+  protected readonly selectedTeamSide = signal<TeamSideFilter>('any');
   protected readonly showAllLineups = signal(false);
   protected readonly addedPoints = signal<Record<string, MapPoint[]>>({});
   protected readonly draftPoint = signal<MapPoint | null>(null);
@@ -502,6 +505,7 @@ export class App {
   protected readonly previewZoom = signal(1);
   protected readonly previewPan = signal({ x: 0, y: 0 });
   protected readonly importError = signal<string | null>(null);
+  protected readonly contentWorkspace = signal<ContentWorkspace | undefined>(undefined);
   protected readonly draggedMediaId = signal<string | null>(null);
   protected readonly selectedMediaId = signal<string | null>(null);
   protected readonly trajectoryEditMode = signal<TrajectoryEditMode | null>(null);
@@ -560,6 +564,7 @@ export class App {
   }
 
   private readonly storage = new LineupStorage();
+  private readonly contentWorkspaceService = new ContentWorkspaceService();
   private dragState: DragState | null = null;
   private trajectoryDragState: TrajectoryDragState | null = null;
   private previewPanState: PreviewPanState | null = null;
@@ -592,7 +597,7 @@ export class App {
     ].filter((point) => (
       !point.grenadeCategoryId ||
       (
-        point.teamSide === selectedTeamSide &&
+        (selectedTeamSide === 'any' || point.teamSide === selectedTeamSide) &&
         (showAllLineups || point.grenadeCategoryId === selectedGrenadeCategoryId)
       )
     ));
@@ -668,6 +673,7 @@ export class App {
 
   constructor() {
     void this.loadStoredPoints();
+    void this.ensureContentWorkspace();
   }
 
   protected selectMap(map: TacticalMap): void {
@@ -678,6 +684,14 @@ export class App {
     this.resetMapView();
     this.closePointEditor();
     this.draftPoint.set(null);
+  }
+
+  protected openSidebar(): void {
+    this.sidebarOpen.set(true);
+  }
+
+  protected closeSidebar(): void {
+    this.sidebarOpen.set(false);
   }
 
   protected selectSettings(): void {
@@ -703,7 +717,7 @@ export class App {
     this.closePointEditor();
   }
 
-  protected selectTeamSide(teamSide: TeamSide): void {
+  protected selectTeamSide(teamSide: TeamSideFilter): void {
     this.cancelTrajectoryInteraction();
     this.selectedTeamSide.set(teamSide);
     this.closePointEditor();
@@ -796,8 +810,7 @@ export class App {
       target.closest('.point-details') ||
       target.closest('.point-action-menu') ||
       target.closest('.level-switcher') ||
-      target.closest('.map-bottom-rail') ||
-      target.closest('.zoom-controls')
+      target.closest('.map-bottom-rail')
     ) {
       return;
     }
@@ -1069,7 +1082,7 @@ export class App {
     this.selectedGrenadeCategoryId.set(category.id);
     this.updatePointById(pointId, {
       grenadeCategoryId: category.id,
-      teamSide: this.selectedTeamSide(),
+      teamSide: this.selectedConcreteTeamSide(),
     });
     this.selectedPointId.set(pointId);
     this.selectedPointMode.set('edit');
@@ -1664,7 +1677,7 @@ export class App {
       x,
       y,
       kind: 'custom',
-      teamSide: this.selectedTeamSide(),
+      teamSide: this.selectedConcreteTeamSide(),
       title: '',
       requirements: [],
       media: [],
@@ -2007,9 +2020,13 @@ export class App {
       target.closest('.point-details') ||
       target.closest('.point-action-menu') ||
       target.closest('.level-switcher') ||
-      target.closest('.map-bottom-rail') ||
-      target.closest('.zoom-controls'),
+      target.closest('.map-bottom-rail'),
     );
+  }
+
+  private selectedConcreteTeamSide(): TeamSide {
+    const selectedTeamSide = this.selectedTeamSide();
+    return selectedTeamSide === 'any' ? 'ct' : selectedTeamSide;
   }
 
   private updateSelectedPoint(patch: Partial<MapPoint>, options: { save?: boolean } = {}): void {
@@ -2062,6 +2079,13 @@ export class App {
   private async loadStoredPoints(): Promise<void> {
     const points = await this.storage.loadPoints();
     this.applyStoredPoints(points);
+  }
+
+  private async ensureContentWorkspace(): Promise<void> {
+    const workspace = await this.contentWorkspaceService.ensureWorkspace(this.maps.map((map) => map.name));
+    if (workspace) {
+      this.contentWorkspace.set(workspace);
+    }
   }
 
   private applyStoredPoints(points: StoredPoint[]): void {
