@@ -18,15 +18,6 @@
         <span class="nav-icon" aria-hidden="true">H</span>
         Home
       </button>
-      <button
-        class="nav-button"
-        type="button"
-        [class.is-active]="appView() === 'settings'"
-        (click)="selectSettings()"
-      >
-        <span class="nav-icon" aria-hidden="true">S</span>
-        Settings
-      </button>
     </nav>
 
     <section class="map-list" aria-label="Map list">
@@ -45,20 +36,32 @@
           >
             <span>
               <strong>{{ map.name }}</strong>
-              <small>{{ map.location }}</small>
+              <small>
+                {{ mapLineupCount(map) }}
+                {{ mapLineupCount(map) === 1 ? 'lineup' : 'lineups' }}
+              </small>
             </span>
-            @if (map.levels.length > 1) {
-              <em>{{ map.levels.length }} levels</em>
-            }
           </button>
         }
-      </div>
 
-      <button class="add-map-button" type="button">
-        <span aria-hidden="true">+</span>
-        Add custom
-      </button>
+        <button class="add-map-button" type="button">
+          <span aria-hidden="true">+</span>
+          Add custom
+        </button>
+      </div>
     </section>
+
+    <nav class="sidebar-footer" aria-label="Application settings">
+      <button
+        class="nav-button"
+        type="button"
+        [class.is-active]="appView() === 'settings'"
+        (click)="selectSettings()"
+      >
+        <span class="nav-icon" aria-hidden="true">S</span>
+        Settings
+      </button>
+    </nav>
   </aside>
 
   <section class="content" aria-label="Map workspace">
@@ -103,6 +106,42 @@
                 [alt]="map.name + ' radar, ' + level.name"
               />
 
+              @if (selectedPoint(); as selected) {
+                @if (selectedTrajectoryPoints().length > 1) {
+                  <svg class="trajectory-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPoints()"></polyline>
+                    <polyline class="trajectory-line" [attr.points]="trajectorySvgPoints()"></polyline>
+                  </svg>
+
+                  @if (selectedPointMode() === 'edit') {
+                    @for (midpoint of trajectorySegmentMidpoints(); track midpoint.id) {
+                      <button
+                        class="trajectory-midpoint"
+                        type="button"
+                        [style.left.%]="midpoint.x"
+                        [style.top.%]="midpoint.y"
+                        aria-label="Insert trajectory point"
+                        (click)="insertTrajectoryVertexAfter(midpoint.index, $event)"
+                      ></button>
+                    }
+                  }
+
+                  @for (vertex of selected.trajectory?.vertices ?? []; track vertex.id; let isLast = $last) {
+                    <button
+                      class="trajectory-vertex"
+                      type="button"
+                      [class.is-start]="isLast"
+                      [class.is-selected]="isTrajectoryVertexSelected(vertex.id)"
+                      [style.left.%]="vertex.x"
+                      [style.top.%]="vertex.y"
+                      [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
+                      (pointerdown)="startTrajectoryVertexDrag(vertex.id, $event)"
+                      (click)="appendTrajectoryFromVertex(vertex.id, $event)"
+                    ></button>
+                  }
+                }
+              }
+
               @for (point of currentPoints(); track point.id) {
                 <button
                   class="map-point"
@@ -120,6 +159,7 @@
                   [style.left.%]="point.x"
                   [style.top.%]="point.y"
                   [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
+                  (pointerdown)="startResultPointDrag(point, $event)"
                   (click)="openPointEditor(point, $event)"
                 >
                   @if (grenadeCategoryForPoint(point)?.iconUrl; as iconUrl) {
@@ -195,21 +235,53 @@
             </div>
 
             <button
-              class="lineup-hero"
+              class="guide-slot"
               type="button"
-              [disabled]="!heroMedia(point)"
-              (click)="heroMedia(point) && openMediaPreview(heroMedia(point)!)"
+              [class.is-empty]="!guideSlotMedia(point, 'start')"
+              (dragover)="onGuideRoleDragOver($event)"
+              (drop)="onGuideRoleDrop('start', $event)"
+              (click)="guideSlotMedia(point, 'start') && openMediaPreview(guideSlotMedia(point, 'start')!)"
             >
-              @if (heroMedia(point); as media) {
+              <small>Start</small>
+              @if (guideSlotMedia(point, 'start'); as media) {
                 @if (media.type === 'image') {
                   <img [src]="media.url" [alt]="media.name" />
                 } @else {
                   <video [src]="media.url" muted></video>
                 }
               } @else {
-                <span>No media</span>
+                <span>No start screenshot</span>
               }
             </button>
+
+            <button
+              class="guide-slot"
+              type="button"
+              [class.is-empty]="!guideSlotMedia(point, 'result')"
+              (dragover)="onGuideRoleDragOver($event)"
+              (drop)="onGuideRoleDrop('result', $event)"
+              (click)="guideSlotMedia(point, 'result') && openMediaPreview(guideSlotMedia(point, 'result')!)"
+            >
+              <small>Result</small>
+              @if (guideSlotMedia(point, 'result'); as media) {
+                @if (media.type === 'image') {
+                  <img [src]="media.url" [alt]="media.name" />
+                } @else {
+                  <video [src]="media.url" muted></video>
+                }
+              } @else {
+                <span>No result screenshot</span>
+              }
+            </button>
+
+            @if (hasTrajectory(point)) {
+              <div class="lineup-condition-group">
+                <span>Trajectory</span>
+                <div class="condition-list">
+                  <em>{{ point.trajectory?.vertices?.length }} points</em>
+                </div>
+              </div>
+            }
 
             <h2 class="lineup-title">{{ displayTitle(point) }}</h2>
 
@@ -257,8 +329,40 @@
             <div class="field">
               <span>Media</span>
               <p class="paste-hint">Ctrl+V adds an image from the clipboard.</p>
+              <div class="guide-role-grid">
+                <button
+                  class="guide-slot is-compact"
+                  type="button"
+                  [class.is-empty]="!guideSlotMedia(point, 'start')"
+                  (dragover)="onGuideRoleDragOver($event)"
+                  (drop)="onGuideRoleDrop('start', $event)"
+                  (click)="guideSlotMedia(point, 'start') && openMediaPreview(guideSlotMedia(point, 'start')!)"
+                >
+                  <small>Start</small>
+                  @if (guideSlotMedia(point, 'start'); as media) {
+                    <img [src]="media.url" [alt]="media.name" />
+                  } @else {
+                    <span>Drop image</span>
+                  }
+                </button>
+                <button
+                  class="guide-slot is-compact"
+                  type="button"
+                  [class.is-empty]="!guideSlotMedia(point, 'result')"
+                  (dragover)="onGuideRoleDragOver($event)"
+                  (drop)="onGuideRoleDrop('result', $event)"
+                  (click)="guideSlotMedia(point, 'result') && openMediaPreview(guideSlotMedia(point, 'result')!)"
+                >
+                  <small>Result</small>
+                  @if (guideSlotMedia(point, 'result'); as media) {
+                    <img [src]="media.url" [alt]="media.name" />
+                  } @else {
+                    <span>Drop image</span>
+                  }
+                </button>
+              </div>
               <div class="media-grid">
-                @for (media of point.media ?? []; track media.id) {
+                @for (media of detailMedia(point); track media.id) {
                   <div
                     class="media-tile"
                     draggable="true"
@@ -270,7 +374,7 @@
                     (dragend)="onMediaDragEnd($event)"
                   >
                     <button class="hero-button" type="button" aria-label="Set as hero image" (click)="setHeroMedia(media.id, $event)">
-                      ★
+                      &#9733;
                     </button>
                     <button class="media-preview-button" type="button" (click)="openMediaPreview(media)">
                       @if (media.type === 'image') {

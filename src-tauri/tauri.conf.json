@@ -5,7 +5,7 @@
   "identifier": "com.cs2nades.desktop",
   "build": {
     "frontendDist": "../dist/cs2nades/browser",
-    "devUrl": "http://localhost:4200",
+    "devUrl": "http://127.0.0.1:4200",
     "beforeDevCommand": ".\\.tools\\node-v24.16.0-win-x64\\npm.cmd run start",
     "beforeBuildCommand": ".\\.tools\\node-v24.16.0-win-x64\\npm.cmd run build"
   },

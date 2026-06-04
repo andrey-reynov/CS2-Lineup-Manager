@@ -4,8 +4,13 @@ import {
   LineupStorage,
   StoredMedia,
   StoredPoint,
+  StoredTrajectory,
+  StoredTrajectoryVertex,
   TeamSide,
 } from './lineup-storage';
+
+type TrajectoryVertex = StoredTrajectoryVertex;
+type Trajectory = StoredTrajectory;
 
 type MapPoint = {
   id: string;
@@ -21,6 +26,7 @@ type MapPoint = {
   requirements?: string[];
   media?: PointMedia[];
   heroMediaId?: string;
+  trajectory?: Trajectory;
 };
 
 type PointMedia = StoredMedia;
@@ -75,6 +81,16 @@ type PointActionMenu = {
 
 type AppView = 'home' | 'map' | 'settings';
 type PointMode = 'view' | 'edit';
+type TrajectoryEditMode = 'create' | 'edit';
+type TrajectoryDragTarget =
+  | { type: 'result'; pointId: string }
+  | { type: 'vertex'; pointId: string; vertexId: string }
+  | { type: 'append'; pointId: string };
+
+type TrajectoryDragState = {
+  pointerId: number;
+  target: TrajectoryDragTarget;
+};
 
 const GRENADE_CATEGORIES: GrenadeCategory[] = [
   {
@@ -359,9 +375,13 @@ export class App {
   protected readonly previewMedia = signal<PointMedia | null>(null);
   protected readonly importError = signal<string | null>(null);
   protected readonly draggedMediaId = signal<string | null>(null);
+  protected readonly trajectoryEditMode = signal<TrajectoryEditMode | null>(null);
+  protected readonly selectedTrajectoryVertexId = signal<string | null>(null);
+  protected readonly draftTrajectoryVertex = signal<TrajectoryVertex | null>(null);
 
   private readonly storage = new LineupStorage();
   private dragState: DragState | null = null;
+  private trajectoryDragState: TrajectoryDragState | null = null;
   private suppressNextBoardClick = false;
 
   protected readonly selectedMap = computed(() => {
@@ -405,11 +425,34 @@ export class App {
     return Object.values(this.addedPoints()).flat();
   });
 
+  protected readonly selectedTrajectoryPoints = computed(() => {
+    const point = this.selectedPoint();
+    if (!point) {
+      return [];
+    }
+
+    const vertices = point.trajectory?.vertices ?? [];
+    const draft = this.draftTrajectoryVertex();
+    return [
+      { id: `${point.id}:result`, x: point.x, y: point.y, role: 'result' as const },
+      ...vertices.map((vertex, index) => ({
+        ...vertex,
+        role: index === vertices.length - 1 ? 'start' as const : 'bend' as const,
+      })),
+      ...(draft ? [{ ...draft, role: 'draft' as const }] : []),
+    ];
+  });
+
+  protected mapLineupCount(map: TacticalMap): number {
+    return this.allSavedPoints().filter((point) => point.mapId === map.id).length;
+  }
+
   constructor() {
     void this.loadStoredPoints();
   }
 
   protected selectMap(map: TacticalMap): void {
+    this.cancelTrajectoryInteraction();
     this.appView.set('map');
     this.selectedMapId.set(map.id);
     this.selectedLevelId.set(map.levels[0].id);
@@ -419,6 +462,7 @@ export class App {
   }
 
   protected selectHome(): void {
+    this.cancelTrajectoryInteraction();
     this.appView.set('home');
     this.selectedMapId.set(null);
     this.closePointEditor();
@@ -426,6 +470,7 @@ export class App {
   }
 
   protected selectSettings(): void {
+    this.cancelTrajectoryInteraction();
     this.appView.set('settings');
     this.selectedMapId.set(null);
     this.closePointEditor();
@@ -433,6 +478,7 @@ export class App {
   }
 
   protected selectLevel(level: MapLevel): void {
+    this.cancelTrajectoryInteraction();
     this.selectedLevelId.set(level.id);
     this.resetMapView();
     this.closePointEditor();
@@ -440,11 +486,13 @@ export class App {
   }
 
   protected selectGrenadeCategory(category: GrenadeCategory): void {
+    this.cancelTrajectoryInteraction();
     this.selectedGrenadeCategoryId.set(category.id);
     this.closePointEditor();
   }
 
   protected selectTeamSide(teamSide: TeamSide): void {
+    this.cancelTrajectoryInteraction();
     this.selectedTeamSide.set(teamSide);
     this.closePointEditor();
   }
@@ -458,12 +506,18 @@ export class App {
   }
 
   protected onBoardPointerDown(event: PointerEvent): void {
+    if (this.trajectoryDragState) {
+      return;
+    }
+
     if ((event.target as HTMLElement).closest('button')) {
       return;
     }
 
     const board = event.currentTarget as HTMLElement;
-    board.setPointerCapture(event.pointerId);
+    if (typeof board.setPointerCapture === 'function') {
+      board.setPointerCapture(event.pointerId);
+    }
     this.dragState = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
@@ -475,6 +529,11 @@ export class App {
   }
 
   protected onBoardPointerMove(event: PointerEvent): void {
+    if (this.trajectoryDragState) {
+      this.onTrajectoryPointerMove(event);
+      return;
+    }
+
     if (!this.dragState || this.dragState.pointerId !== event.pointerId || this.mapZoom() <= 1) {
       return;
     }
@@ -492,12 +551,17 @@ export class App {
   }
 
   protected onBoardPointerUp(event: PointerEvent): void {
+    if (this.trajectoryDragState) {
+      this.onTrajectoryPointerUp(event);
+      return;
+    }
+
     if (!this.dragState || this.dragState.pointerId !== event.pointerId) {
       return;
     }
 
     const board = event.currentTarget as HTMLElement;
-    board.releasePointerCapture(event.pointerId);
+    board.releasePointerCapture?.(event.pointerId);
     this.suppressNextBoardClick = this.dragState.hasMoved;
     this.dragState = null;
   }
@@ -508,6 +572,10 @@ export class App {
     }
 
     if ((event.target as HTMLElement).closest('button')) {
+      return;
+    }
+
+    if (this.trajectoryEditMode()) {
       return;
     }
 
@@ -545,9 +613,21 @@ export class App {
 
   protected openPointEditor(point: MapPoint, event: MouseEvent): void {
     event.stopPropagation();
+    if (this.suppressNextBoardClick) {
+      this.suppressNextBoardClick = false;
+      return;
+    }
+
+    if (this.selectedPointId() === point.id && this.selectedPointMode() === 'edit') {
+      return;
+    }
+
     if (point.grenadeCategoryId) {
       this.selectedPointId.set(point.id);
       this.selectedPointMode.set('view');
+      this.trajectoryEditMode.set(null);
+      this.selectedTrajectoryVertexId.set(null);
+      this.draftTrajectoryVertex.set(null);
       this.closePointActionMenu();
       return;
     }
@@ -570,6 +650,7 @@ export class App {
   protected closePointEditor(): void {
     this.selectedPointId.set(null);
     this.selectedPointMode.set('view');
+    this.cancelTrajectoryInteraction();
     this.closePointActionMenu();
     this.previewMedia.set(null);
     this.draggedMediaId.set(null);
@@ -633,6 +714,8 @@ export class App {
     if (point?.grenadeCategoryId) {
       void this.storage.savePoint(this.toStoredPoint(point));
       this.selectedPointMode.set('view');
+      this.trajectoryEditMode.set(null);
+      this.selectedTrajectoryVertexId.set(null);
     }
   }
 
@@ -645,6 +728,9 @@ export class App {
     });
     this.selectedPointId.set(pointId);
     this.selectedPointMode.set('edit');
+    this.trajectoryEditMode.set('create');
+    this.selectedTrajectoryVertexId.set(null);
+    this.draftTrajectoryVertex.set(null);
     this.draftPoint.set(null);
     this.closePointActionMenu();
     const point = this.selectedPoint();
@@ -679,6 +765,52 @@ export class App {
   protected setHeroMedia(mediaId: string, event: MouseEvent): void {
     event.stopPropagation();
     this.updateSelectedPoint({ heroMediaId: mediaId });
+  }
+
+  protected mediaForRole(point: MapPoint, role: 'start' | 'result'): PointMedia | undefined {
+    return (point.media ?? []).find((media) => media.role === role);
+  }
+
+  protected detailMedia(point: MapPoint): PointMedia[] {
+    return (point.media ?? []).filter((media) => !media.role || media.role === 'detail');
+  }
+
+  protected assignMediaRole(mediaId: string, role: 'start' | 'result'): void {
+    const point = this.selectedPoint();
+    if (!point) {
+      return;
+    }
+
+    const media = point.media ?? [];
+    const target = media.find((item) => item.id === mediaId);
+    if (!target || target.type !== 'image') {
+      return;
+    }
+
+    this.updateSelectedPoint({
+      media: media.map((item) => ({
+        ...item,
+        role: item.id === mediaId ? role : item.role === role ? 'detail' : item.role ?? 'detail',
+      })),
+    });
+  }
+
+  protected onGuideRoleDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  protected onGuideRoleDrop(role: 'start' | 'result', event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const mediaId = this.draggedMediaId() ?? event.dataTransfer?.getData('text/plain');
+    this.draggedMediaId.set(null);
+    if (mediaId) {
+      this.assignMediaRole(mediaId, role);
+    }
   }
 
   protected onMediaDragStart(mediaId: string, event: DragEvent): void {
@@ -726,6 +858,121 @@ export class App {
     this.draggedMediaId.set(null);
   }
 
+  protected startResultPointDrag(point: MapPoint, event: PointerEvent): void {
+    if (this.selectedPointId() !== point.id || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.trajectoryEditMode() === 'create' && (point.trajectory?.vertices.length ?? 0) === 0) {
+      this.beginTrajectoryDrag(event, { type: 'append', pointId: point.id });
+      return;
+    }
+
+    this.beginTrajectoryDrag(event, { type: 'result', pointId: point.id });
+  }
+
+  protected startTrajectoryVertexDrag(vertexId: string, event: PointerEvent): void {
+    const point = this.selectedPoint();
+    if (!point || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.selectedTrajectoryVertexId.set(vertexId);
+    this.beginTrajectoryDrag(event, { type: 'vertex', pointId: point.id, vertexId });
+  }
+
+  protected appendTrajectoryFromVertex(vertexId: string, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.suppressNextBoardClick) {
+      this.suppressNextBoardClick = false;
+      return;
+    }
+
+    const point = this.selectedPoint();
+    if (!point || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    const vertices = point.trajectory?.vertices ?? [];
+    if (vertices.at(-1)?.id !== vertexId) {
+      this.selectedTrajectoryVertexId.set(vertexId);
+      return;
+    }
+
+    this.trajectoryEditMode.set('edit');
+    const source = vertices.find((vertex) => vertex.id === vertexId);
+    if (source) {
+      this.addTrajectoryVertex(point, { x: source.x, y: source.y });
+    }
+  }
+
+  protected insertTrajectoryVertexAfter(index: number, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const point = this.selectedPoint();
+    if (!point || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    const path = this.selectedTrajectoryPoints().filter((pathPoint) => pathPoint.role !== 'draft');
+    const before = path[index];
+    const after = path[index + 1];
+    if (!before || !after) {
+      return;
+    }
+
+    const vertex: TrajectoryVertex = {
+      id: this.createTrajectoryVertexId(point.id),
+      x: (before.x + after.x) / 2,
+      y: (before.y + after.y) / 2,
+    };
+    const vertices = [...(point.trajectory?.vertices ?? [])];
+    vertices.splice(index, 0, vertex);
+    this.updateSelectedPoint({ trajectory: { vertices } });
+    this.selectedTrajectoryVertexId.set(vertex.id);
+    this.trajectoryEditMode.set('edit');
+  }
+
+  protected isTrajectoryVertexSelected(vertexId: string): boolean {
+    return this.selectedTrajectoryVertexId() === vertexId;
+  }
+
+  protected hasTrajectory(point: MapPoint): boolean {
+    return (point.trajectory?.vertices.length ?? 0) > 0;
+  }
+
+  protected startPoint(point: MapPoint): TrajectoryVertex | undefined {
+    return point.trajectory?.vertices.at(-1);
+  }
+
+  protected guideSlotMedia(point: MapPoint, role: 'start' | 'result'): PointMedia | undefined {
+    return this.mediaForRole(point, role);
+  }
+
+  protected trajectorySvgPoints(): string {
+    return this.selectedTrajectoryPoints()
+      .map((point) => `${point.x},${point.y}`)
+      .join(' ');
+  }
+
+  protected trajectorySegmentMidpoints(): Array<{ id: string; index: number; x: number; y: number }> {
+    const points = this.selectedTrajectoryPoints().filter((point) => point.role !== 'draft');
+    return points.slice(0, -1).map((point, index) => {
+      const nextPoint = points[index + 1];
+      return {
+        id: `${point.id}:${nextPoint.id}:mid`,
+        index,
+        x: (point.x + nextPoint.x) / 2,
+        y: (point.y + nextPoint.y) / 2,
+      };
+    });
+  }
+
   protected async exportZip(): Promise<void> {
     const blob = await this.storage.exportZip(this.allSavedPoints().map((point) => this.toStoredPoint(point)));
     const url = URL.createObjectURL(blob);
@@ -769,6 +1016,28 @@ export class App {
     this.addMediaFiles(files);
   }
 
+  @HostListener('window:keydown', ['$event'])
+  protected onKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      if (this.trajectoryEditMode() || this.trajectoryDragState || this.draftTrajectoryVertex()) {
+        event.preventDefault();
+        this.cancelTrajectoryInteraction();
+      }
+      return;
+    }
+
+    if (event.key === 'Enter' && this.trajectoryEditMode()) {
+      event.preventDefault();
+      this.commitTrajectoryInteraction();
+      return;
+    }
+
+    if ((event.key === 'Delete' || event.key === 'Backspace') && this.selectedTrajectoryVertexId()) {
+      event.preventDefault();
+      this.deleteSelectedTrajectoryVertex();
+    }
+  }
+
   private addPointFromBoardEvent(event: MouseEvent, board: HTMLElement): void {
     const selectedMap = this.selectedMap();
     const selectedLevel = this.selectedLevel();
@@ -791,6 +1060,7 @@ export class App {
       title: '',
       requirements: [],
       media: [],
+      trajectory: { vertices: [] },
     };
 
     this.markerCounters.update((counters) => ({
@@ -798,6 +1068,154 @@ export class App {
       [key]: nextPointNumber,
     }));
     this.draftPoint.set(point);
+  }
+
+  private beginTrajectoryDrag(event: PointerEvent, target: TrajectoryDragTarget): void {
+    const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
+    if (!board) {
+      return;
+    }
+
+    if (typeof board.setPointerCapture === 'function') {
+      board.setPointerCapture(event.pointerId);
+    }
+    this.trajectoryDragState = {
+      pointerId: event.pointerId,
+      target,
+    };
+
+    if (target.type === 'append') {
+      this.draftTrajectoryVertex.set({
+        id: this.createTrajectoryVertexId(target.pointId),
+        ...this.getMapPercentFromClientPoint(event.clientX, event.clientY, board),
+      });
+    }
+  }
+
+  private onTrajectoryPointerMove(event: PointerEvent): void {
+    const dragState = this.trajectoryDragState;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
+    if (!board) {
+      return;
+    }
+
+    const point = this.selectedPoint();
+    if (!point || point.id !== dragState.target.pointId) {
+      return;
+    }
+
+    const position = this.getMapPercentFromClientPoint(event.clientX, event.clientY, board);
+    if (dragState.target.type === 'result') {
+      this.updateSelectedPoint(position, { save: false });
+      return;
+    }
+
+    if (dragState.target.type === 'vertex') {
+      this.updateTrajectoryVertex(dragState.target.vertexId, position, false);
+      return;
+    }
+
+    this.draftTrajectoryVertex.set({
+      id: this.draftTrajectoryVertex()?.id ?? this.createTrajectoryVertexId(point.id),
+      ...position,
+    });
+  }
+
+  private onTrajectoryPointerUp(event: PointerEvent): void {
+    const dragState = this.trajectoryDragState;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
+    if (board && typeof board.releasePointerCapture === 'function') {
+      board.releasePointerCapture(event.pointerId);
+    }
+    this.trajectoryDragState = null;
+    this.suppressNextBoardClick = true;
+
+    const point = this.selectedPoint();
+    if (!point || point.id !== dragState.target.pointId) {
+      this.draftTrajectoryVertex.set(null);
+      return;
+    }
+
+    if (dragState.target.type === 'append') {
+      const draft = this.draftTrajectoryVertex();
+      this.draftTrajectoryVertex.set(null);
+      if (draft) {
+        this.addTrajectoryVertex(point, draft);
+      }
+      return;
+    }
+
+    if (point.grenadeCategoryId) {
+      void this.storage.savePoint(this.toStoredPoint(point));
+    }
+  }
+
+  private addTrajectoryVertex(
+    point: MapPoint,
+    vertex: Pick<TrajectoryVertex, 'x' | 'y'> & Partial<Pick<TrajectoryVertex, 'id'>>,
+  ): void {
+    const nextVertex: TrajectoryVertex = {
+      id: vertex.id ?? this.createTrajectoryVertexId(point.id),
+      x: vertex.x,
+      y: vertex.y,
+    };
+    const vertices = [...(point.trajectory?.vertices ?? []), nextVertex];
+    this.updateSelectedPoint({ trajectory: { vertices } });
+    this.selectedTrajectoryVertexId.set(nextVertex.id);
+    this.trajectoryEditMode.set('edit');
+  }
+
+  private updateTrajectoryVertex(vertexId: string, patch: Pick<TrajectoryVertex, 'x' | 'y'>, save: boolean): void {
+    const point = this.selectedPoint();
+    if (!point) {
+      return;
+    }
+
+    const vertices = (point.trajectory?.vertices ?? []).map((vertex) => (
+      vertex.id === vertexId ? { ...vertex, ...patch } : vertex
+    ));
+    this.updateSelectedPoint({ trajectory: { vertices } }, { save });
+  }
+
+  private deleteSelectedTrajectoryVertex(): void {
+    const point = this.selectedPoint();
+    const selectedVertexId = this.selectedTrajectoryVertexId();
+    if (!point || !selectedVertexId) {
+      return;
+    }
+
+    const vertices = (point.trajectory?.vertices ?? []).filter((vertex) => vertex.id !== selectedVertexId);
+    this.updateSelectedPoint({ trajectory: { vertices } });
+    this.selectedTrajectoryVertexId.set(null);
+  }
+
+  private cancelTrajectoryInteraction(): void {
+    this.trajectoryDragState = null;
+    this.trajectoryEditMode.set(null);
+    this.selectedTrajectoryVertexId.set(null);
+    this.draftTrajectoryVertex.set(null);
+  }
+
+  private commitTrajectoryInteraction(): void {
+    const point = this.selectedPoint();
+    this.trajectoryEditMode.set(null);
+    this.selectedTrajectoryVertexId.set(null);
+    this.draftTrajectoryVertex.set(null);
+    if (point?.grenadeCategoryId) {
+      void this.storage.savePoint(this.toStoredPoint(point));
+    }
+  }
+
+  private createTrajectoryVertexId(pointId: string): string {
+    return `${pointId}:trajectory:${Date.now()}:${Math.round(Math.random() * 100000)}`;
   }
 
   private zoomAt(board: HTMLElement, clientX: number, clientY: number, delta: number): void {
@@ -847,6 +1265,7 @@ export class App {
         mimeType: file.type,
         blob: file,
         url: URL.createObjectURL(file),
+        role: 'detail' as const,
       }));
 
     if (media.length === 0) {
@@ -860,14 +1279,14 @@ export class App {
     });
   }
 
-  private updateSelectedPoint(patch: Partial<MapPoint>): void {
+  private updateSelectedPoint(patch: Partial<MapPoint>, options: { save?: boolean } = {}): void {
     const selectedPointId = this.selectedPointId();
     if (!selectedPointId) {
       return;
     }
 
     const key = this.currentLevelKey();
-    this.updatePointInLevel(key, selectedPointId, patch);
+    this.updatePointInLevel(key, selectedPointId, patch, options);
   }
 
   private updatePointById(pointId: string, patch: Partial<MapPoint>): void {
@@ -884,13 +1303,27 @@ export class App {
     this.updatePointInLevel(this.currentLevelKey(), pointId, patch);
   }
 
-  private updatePointInLevel(key: string, pointId: string, patch: Partial<MapPoint>): void {
+  private updatePointInLevel(
+    key: string,
+    pointId: string,
+    patch: Partial<MapPoint>,
+    options: { save?: boolean } = {},
+  ): void {
+    let nextSavedPoint: MapPoint | undefined;
     this.addedPoints.update((points) => ({
       ...points,
-      [key]: (points[key] ?? []).map((point) => (
-        point.id === pointId ? { ...point, ...patch } : point
-      )),
+      [key]: (points[key] ?? []).map((point) => {
+        if (point.id !== pointId) {
+          return point;
+        }
+
+        nextSavedPoint = { ...point, ...patch };
+        return nextSavedPoint;
+      }),
     }));
+    if (options.save !== false && nextSavedPoint?.grenadeCategoryId) {
+      void this.storage.savePoint(this.toStoredPoint(nextSavedPoint));
+    }
   }
 
   private async loadStoredPoints(): Promise<void> {
@@ -929,6 +1362,7 @@ export class App {
       requirements: point.requirements,
       media: point.media,
       heroMediaId: point.heroMediaId,
+      trajectory: point.trajectory ?? { vertices: [] },
     };
   }
 
@@ -949,8 +1383,9 @@ export class App {
       teamSide: point.teamSide,
       title: point.title ?? '',
       requirements: point.requirements ?? [],
-      media: point.media ?? [],
+      media: (point.media ?? []).map((media) => ({ ...media, role: media.role ?? 'detail' })),
       heroMediaId: point.heroMediaId,
+      trajectory: point.trajectory ?? { vertices: [] },
     };
   }
 

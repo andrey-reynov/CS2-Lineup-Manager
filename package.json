@@ -3,14 +3,14 @@
   "version": "0.0.0",
   "scripts": {
     "ng": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js",
-    "start": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js serve",
+    "start": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js serve --host 127.0.0.1",
     "build": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js build",
     "watch": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js build --watch --configuration development",
     "test": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js test",
     "extract:cs2-assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/extract-cs2-assets.ps1",
     "tauri": "tauri",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:dev": ".\\scripts\\run-tauri-dev.cmd",
+    "desktop:build": ".\\scripts\\run-tauri-build.cmd"
   },
   "private": true,
   "dependencies": {

@@ -109,6 +109,15 @@ h2 {
   border-bottom: 1px solid var(--vscode-border);
 }
 
+.sidebar-footer {
+  display: grid;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--vscode-border);
+}
+
 .nav-button,
 .map-button,
 .add-map-button,
@@ -208,8 +217,7 @@ h2 {
 }
 
 .map-button strong,
-.map-button small,
-.map-button em {
+.map-button small {
   display: block;
 }
 
@@ -224,14 +232,6 @@ h2 {
   font-size: 0.78rem;
 }
 
-.map-button em {
-  flex: 0 0 auto;
-  color: var(--vscode-accent);
-  font-size: 0.74rem;
-  font-style: normal;
-  font-weight: 800;
-}
-
 .add-map-button {
   display: flex;
   align-items: center;
@@ -239,7 +239,7 @@ h2 {
   gap: 10px;
   width: 100%;
   min-height: 46px;
-  margin-top: 16px;
+  margin-top: 4px;
   color: var(--vscode-text-strong);
   font-weight: 800;
   background: var(--vscode-accent);
@@ -438,6 +438,90 @@ h2 {
 .map-point:hover {
   z-index: 2;
   transform: translate(-50%, -50%) scale(1.18);
+}
+
+.trajectory-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.trajectory-line,
+.trajectory-line-shadow {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.trajectory-line-shadow {
+  stroke: rgba(0, 0, 0, 0.72);
+  stroke-width: 7;
+}
+
+.trajectory-line {
+  stroke: var(--vscode-warning-hover);
+  stroke-dasharray: 8 6;
+  stroke-width: 3;
+}
+
+.trajectory-vertex,
+.trajectory-midpoint {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+}
+
+.trajectory-vertex {
+  width: 18px;
+  height: 18px;
+  background: var(--vscode-warning-hover);
+  border: 2px solid var(--vscode-editor-bg);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.45),
+    0 8px 16px var(--vscode-shadow);
+  cursor: grab;
+}
+
+.trajectory-vertex.is-start {
+  width: 24px;
+  height: 24px;
+  background: var(--team-ct);
+}
+
+.trajectory-vertex.is-start::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  background: var(--vscode-text-strong);
+  border-radius: 999px;
+}
+
+.trajectory-vertex.is-selected {
+  box-shadow:
+    0 0 0 3px var(--vscode-focus-ring),
+    0 8px 16px var(--vscode-shadow);
+}
+
+.trajectory-midpoint {
+  width: 14px;
+  height: 14px;
+  background: var(--vscode-editor-bg);
+  border: 2px solid var(--vscode-warning-hover);
+  opacity: 0;
+  cursor: copy;
+}
+
+.map-content:hover .trajectory-midpoint {
+  opacity: 0.9;
 }
 
 .map-point.is-bomb {
@@ -721,6 +805,78 @@ h2 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.guide-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  padding: 0;
+  color: var(--vscode-text-muted);
+  font: inherit;
+  font-weight: 900;
+  background: var(--vscode-control-bg);
+  border: 1px dashed var(--vscode-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.guide-slot:hover,
+.guide-slot:focus-visible {
+  border-color: var(--vscode-focus-ring);
+  outline: 0;
+}
+
+.guide-slot.is-empty {
+  cursor: default;
+}
+
+.guide-slot small {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  padding: 3px 7px;
+  color: var(--vscode-text-strong);
+  font-size: 0.68rem;
+  line-height: 1;
+  text-transform: uppercase;
+  background: var(--vscode-overlay-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 999px;
+}
+
+.guide-slot span {
+  max-width: calc(100% - 28px);
+  color: var(--vscode-text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.guide-slot img,
+.guide-slot video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.guide-role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.guide-slot.is-compact {
+  aspect-ratio: 1.35;
+}
+
+.guide-slot.is-compact small {
+  top: 6px;
+  left: 6px;
 }
 
 .lineup-title {

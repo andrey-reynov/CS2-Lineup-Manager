@@ -3,6 +3,17 @@ import JSZip from 'jszip';
 export type TeamSide = 'ct' | 't';
 export type GrenadeCategoryId = 'smoke' | 'flash' | 'molotov' | 'he';
 export type MediaKind = 'image' | 'video';
+export type MediaRole = 'start' | 'result' | 'detail';
+
+export type StoredTrajectoryVertex = {
+  id: string;
+  x: number;
+  y: number;
+};
+
+export type StoredTrajectory = {
+  vertices: StoredTrajectoryVertex[];
+};
 
 export type StoredMedia = {
   id: string;
@@ -11,6 +22,7 @@ export type StoredMedia = {
   mimeType: string;
   blob: Blob;
   url: string;
+  role?: MediaRole;
 };
 
 export type StoredPoint = {
@@ -27,6 +39,7 @@ export type StoredPoint = {
   requirements: string[];
   media: StoredMedia[];
   heroMediaId?: string;
+  trajectory?: StoredTrajectory;
 };
 
 type PointRecord = Omit<StoredPoint, 'media'> & {
@@ -40,6 +53,7 @@ type MediaRecord = {
   type: MediaKind;
   mimeType: string;
   blob: Blob;
+  role?: MediaRole;
 };
 
 type ExportMedia = Omit<StoredMedia, 'blob' | 'url'> & {
@@ -86,7 +100,9 @@ export class LineupStorage {
             mimeType: media.mimeType,
             blob: media.blob,
             url: URL.createObjectURL(media.blob),
+            role: media.role ?? 'detail',
           })),
+        trajectory: point.trajectory ?? { vertices: [] },
       };
     });
   }
@@ -99,7 +115,8 @@ export class LineupStorage {
     const db = await this.openDb();
     const pointRecord: PointRecord = {
       ...point,
-      media: point.media.map(({ id, name, type, mimeType }) => ({ id, name, type, mimeType })),
+      media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role: role ?? 'detail' })),
+      trajectory: point.trajectory ?? { vertices: [] },
     };
     const mediaRecords: MediaRecord[] = point.media.map((media) => ({
       id: media.id,
@@ -108,6 +125,7 @@ export class LineupStorage {
       type: media.type,
       mimeType: media.mimeType,
       blob: media.blob,
+      role: media.role ?? 'detail',
     }));
 
     await this.transaction(db, [POINTS_STORE, MEDIA_STORE], 'readwrite', (transaction) => {
@@ -159,7 +177,8 @@ export class LineupStorage {
       for (const point of points) {
         pointStore.put({
           ...point,
-          media: point.media.map(({ id, name, type, mimeType }) => ({ id, name, type, mimeType })),
+          media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role: role ?? 'detail' })),
+          trajectory: point.trajectory ?? { vertices: [] },
         } satisfies PointRecord);
         for (const media of point.media) {
           mediaStore.put({
@@ -169,6 +188,7 @@ export class LineupStorage {
             type: media.type,
             mimeType: media.mimeType,
             blob: media.blob,
+            role: media.role ?? 'detail',
           } satisfies MediaRecord);
         }
       }
@@ -190,6 +210,7 @@ export class LineupStorage {
             name: media.name,
             type: media.type,
             mimeType: media.mimeType,
+            role: media.role ?? 'detail',
             fileName,
           };
         }),
@@ -214,6 +235,7 @@ export class LineupStorage {
 
     return Promise.all(manifest.points.map(async (point) => ({
       ...point,
+      trajectory: point.trajectory ?? { vertices: [] },
       media: await Promise.all(point.media.map(async (media) => {
         const mediaFile = zip.file(media.fileName);
         if (!mediaFile) {
@@ -229,6 +251,7 @@ export class LineupStorage {
           mimeType: media.mimeType,
           blob,
           url: URL.createObjectURL(blob),
+          role: media.role ?? 'detail',
         };
       })),
     })));

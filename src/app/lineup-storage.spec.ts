@@ -16,6 +16,12 @@ describe('LineupStorage', () => {
       title: 'Window smoke',
       requirements: ['jump', 'left-click'],
       heroMediaId: 'media-2',
+      trajectory: {
+        vertices: [
+          { id: 'vertex-1', x: 40, y: 45 },
+          { id: 'vertex-2', x: 30, y: 35 },
+        ],
+      },
       media: [
         {
           id: 'media-1',
@@ -24,6 +30,7 @@ describe('LineupStorage', () => {
           mimeType: 'image/png',
           blob: new Blob(['image-bytes'], { type: 'image/png' }),
           url: 'blob:test',
+          role: 'start',
         },
         {
           id: 'media-2',
@@ -32,6 +39,7 @@ describe('LineupStorage', () => {
           mimeType: 'image/png',
           blob: new Blob(['hero-bytes'], { type: 'image/png' }),
           url: 'blob:hero',
+          role: 'result',
         },
       ],
     };
@@ -43,6 +51,8 @@ describe('LineupStorage', () => {
     expect(imported[0].title).toBe('Window smoke');
     expect(imported[0].teamSide).toBe('ct');
     expect(imported[0].heroMediaId).toBe('media-2');
+    expect(imported[0].trajectory?.vertices.map((vertex) => vertex.id)).toEqual(['vertex-1', 'vertex-2']);
+    expect(imported[0].media.map((media) => media.role)).toEqual(['start', 'result']);
     expect(imported[0].media.map((media) => media.id)).toEqual(['media-1', 'media-2']);
     expect(await imported[0].media[0].blob.text()).toBe('image-bytes');
   });
