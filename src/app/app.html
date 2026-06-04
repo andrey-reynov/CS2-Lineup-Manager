@@ -26,12 +26,14 @@
         <span>{{ maps.length }}</span>
       </div>
 
-      <div class="map-buttons">
+      <div class="map-buttons" [class.show-scrollbar]="showMenuScrollbar()">
         @for (map of maps; track map.id) {
           <button
             class="map-button"
             type="button"
             [class.is-active]="selectedMap()?.id === map.id"
+            [class.has-background]="map.navBackgroundUrl"
+            [style.--map-background]="map.navBackgroundUrl ? 'url(' + map.navBackgroundUrl + ')' : null"
             (click)="selectMap(map)"
           >
             <span>
@@ -65,7 +67,7 @@
   </aside>
 
   <section class="content" aria-label="Map workspace">
-    <div class="map-stage" [class.has-point-details]="selectedPoint()">
+    <div class="map-stage" [class.has-point-details]="selectedPoint()" [class.is-editing-lineup]="selectedPointMode() === 'edit'">
       @if (appView() === 'home') {
         <div class="empty-board">
           <span>Choose a map</span>
@@ -73,6 +75,17 @@
       } @else if (appView() === 'settings') {
         <section class="settings-panel" aria-label="Settings">
           <h2>Settings</h2>
+          <label class="settings-toggle">
+            <span>
+              <strong>Show menu scrollbar</strong>
+              <small>Reveal the scroll thumb in the maps list.</small>
+            </span>
+            <input
+              type="checkbox"
+              [checked]="showMenuScrollbar()"
+              (change)="setShowMenuScrollbar($any($event.target).checked)"
+            />
+          </label>
           <label class="settings-action">
             <input type="file" accept=".zip,application/zip" (change)="importZip($event)" />
             Import ZIP
@@ -94,6 +107,8 @@
             (pointerup)="onBoardPointerUp($event)"
             (pointercancel)="closePointEditor()"
             (click)="onBoardClick($event)"
+            (dblclick)="onBoardDoubleClick($event)"
+            (contextmenu)="onBoardContextMenu($event)"
             (wheel)="onBoardWheel($event)"
           >
             <div
@@ -118,10 +133,13 @@
                       <button
                         class="trajectory-midpoint"
                         type="button"
+                        [class.is-hovered]="isTrajectorySegmentHovered(midpoint.index)"
                         [style.left.%]="midpoint.x"
                         [style.top.%]="midpoint.y"
                         aria-label="Insert trajectory point"
-                        (click)="insertTrajectoryVertexAfter(midpoint.index, $event)"
+                        (pointerenter)="setHoveredTrajectorySegment(midpoint.index)"
+                        (pointerleave)="setHoveredTrajectorySegment(null)"
+                        (pointerdown)="startTrajectorySegmentDrag(midpoint.index, $event)"
                       ></button>
                     }
                   }
@@ -132,6 +150,7 @@
                       type="button"
                       [class.is-start]="isLast"
                       [class.is-selected]="isTrajectoryVertexSelected(vertex.id)"
+                      [class.is-dragging]="isDraggingTrajectoryVertex(vertex.id)"
                       [style.left.%]="vertex.x"
                       [style.top.%]="vertex.y"
                       [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
@@ -156,6 +175,7 @@
                   [class.is-he]="point.grenadeCategoryId === 'he'"
                   [class.is-ct]="point.teamSide === 'ct'"
                   [class.is-t]="point.teamSide === 't'"
+                  [class.is-dragging]="isDraggingResultPoint(point.id)"
                   [style.left.%]="point.x"
                   [style.top.%]="point.y"
                   [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
@@ -217,9 +237,6 @@
                     </button>
                   }
                 </div>
-                <button type="button" class="start-point-button" (click)="addStartPoint(menu.pointId, $event)">
-                  Add start point
-                </button>
               </div>
             }
           </div>
@@ -230,7 +247,7 @@
         @if (selectedPointMode() === 'view') {
           <aside class="point-details is-view" aria-label="Lineup details">
             <div class="point-details-header">
-              <span>Lineup</span>
+              <span>{{ displayTitle(point) }}</span>
               <button type="button" aria-label="Close" (click)="closePointEditor()">x</button>
             </div>
 
@@ -252,6 +269,24 @@
               } @else {
                 <span>No start screenshot</span>
               }
+              <div class="guide-throw-overlay">
+                <em>{{ guideMovementText(point) || 'None' }}</em>
+                @if (guideMouseRequirement(point); as mouseRequirement) {
+                  <strong>
+                    <span
+                      class="mouse-icon"
+                      [class.is-left]="mouseRequirement.mouseButtons === 'left'"
+                      [class.is-right]="mouseRequirement.mouseButtons === 'right'"
+                      [class.is-both]="mouseRequirement.mouseButtons === 'both'"
+                      aria-hidden="true"
+                    >
+                      <span></span>
+                      <span></span>
+                    </span>
+                    {{ mouseRequirement.label }}
+                  </strong>
+                }
+              </div>
             </button>
 
             <button
@@ -274,45 +309,12 @@
               }
             </button>
 
-            @if (hasTrajectory(point)) {
-              <div class="lineup-condition-group">
-                <span>Trajectory</span>
-                <div class="condition-list">
-                  <em>{{ point.trajectory?.vertices?.length }} points</em>
-                </div>
-              </div>
-            }
-
-            <h2 class="lineup-title">{{ displayTitle(point) }}</h2>
-
-            <div class="lineup-condition-group">
-              <span>Movement</span>
-              <div class="condition-list">
-                @for (requirement of selectedRequirements(point, movementRequirements); track requirement.id) {
-                  <em>{{ requirement.label }}</em>
-                } @empty {
-                  <small>None</small>
-                }
-              </div>
-            </div>
-
-            <div class="lineup-condition-group">
-              <span>Mouse</span>
-              <div class="condition-list">
-                @for (requirement of selectedRequirements(point, mouseRequirements); track requirement.id) {
-                  <em>{{ requirement.label }}</em>
-                } @empty {
-                  <small>None</small>
-                }
-              </div>
-            </div>
-
             <button type="button" class="edit-button" (click)="editSelectedPoint()">Edit</button>
           </aside>
         } @else {
           <aside class="point-details" aria-label="Lineup editor">
             <div class="point-details-header">
-              <span>Edit lineup</span>
+              <span>{{ displayTitle(point) }}</span>
               <button type="button" aria-label="Close" (click)="closePointEditor()">x</button>
             </div>
 
@@ -362,21 +364,23 @@
                 </button>
               </div>
               <div class="media-grid">
-                @for (media of detailMedia(point); track media.id) {
+                @for (media of orderedMedia(point); track media.id) {
                   <div
                     class="media-tile"
                     draggable="true"
-                    [class.is-hero]="heroMedia(point)?.id === media.id"
+                    [class.is-selected]="isMediaSelected(media.id)"
                     [class.is-dragging]="draggedMediaId() === media.id"
                     (dragstart)="onMediaDragStart(media.id, $event)"
                     (dragover)="onMediaDragOver($event)"
                     (drop)="onMediaDrop(media.id, $event)"
                     (dragend)="onMediaDragEnd($event)"
                   >
-                    <button class="hero-button" type="button" aria-label="Set as hero image" (click)="setHeroMedia(media.id, $event)">
-                      &#9733;
-                    </button>
-                    <button class="media-preview-button" type="button" (click)="openMediaPreview(media)">
+                    <button
+                      class="media-preview-button"
+                      type="button"
+                      (click)="selectMedia(media, $event)"
+                      (dblclick)="openMediaPreviewFromEdit(media, $event)"
+                    >
                       @if (media.type === 'image') {
                         <img [src]="media.url" [alt]="media.name" />
                       } @else {
@@ -392,15 +396,17 @@
                     multiple
                     (change)="onMediaFilesSelected($event)"
                   />
-                  <span aria-hidden="true">+</span>
-                  <small>Add media</small>
+                  <span>
+                    <em aria-hidden="true">+</em>
+                    <small>Add media</small>
+                  </span>
                 </label>
               </div>
             </div>
 
             <div class="field">
               <span>Side</span>
-              <div class="toggle-grid is-two-columns">
+              <div class="toggle-grid is-team-row">
                 @for (side of teamSideOptions; track side.id) {
                   <button
                     type="button"
@@ -431,13 +437,25 @@
 
             <div class="field">
               <span>Mouse</span>
-              <div class="toggle-grid is-two-columns">
+              <div class="toggle-grid is-mouse-radio">
                 @for (requirement of mouseRequirements; track requirement.id) {
                   <button
                     type="button"
                     [class.is-active]="hasRequirement(point, requirement.id)"
-                    (click)="toggleRequirement(requirement.id, !hasRequirement(point, requirement.id))"
+                    (click)="selectMouseRequirement(requirement.id)"
                   >
+                    @if (requirement.mouseButtons; as mouseButtons) {
+                      <span
+                        class="mouse-icon"
+                        [class.is-left]="mouseButtons === 'left'"
+                        [class.is-right]="mouseButtons === 'right'"
+                        [class.is-both]="mouseButtons === 'both'"
+                        aria-hidden="true"
+                      >
+                        <span></span>
+                        <span></span>
+                      </span>
+                    }
                     {{ requirement.label }}
                   </button>
                 }
@@ -491,11 +509,60 @@
 
 @if (previewMedia(); as media) {
   <div class="media-preview" role="dialog" aria-modal="true" (click)="closeMediaPreview()">
-    <button type="button" aria-label="Close" (click)="closeMediaPreview()">x</button>
-    @if (media.type === 'image') {
-      <img [src]="media.url" [alt]="media.name" />
-    } @else {
-      <video [src]="media.url" controls autoplay></video>
+    <div class="media-preview-toolbar" (click)="$event.stopPropagation()">
+      <button type="button" aria-label="Zoom out" (click)="zoomPreview(-0.25, $event)">-</button>
+      <span>{{ (previewZoom() * 100).toFixed(0) }}%</span>
+      <button type="button" aria-label="Zoom in" (click)="zoomPreview(0.25, $event)">+</button>
+      <button type="button" aria-label="Close" (click)="closeMediaPreview()">x</button>
+    </div>
+
+    @if (previewGallery().length > 1) {
+      <button class="media-preview-nav is-left" type="button" aria-label="Previous media" (click)="showPreviousPreviewMedia($event)">‹</button>
+      <button class="media-preview-nav is-right" type="button" aria-label="Next media" (click)="showNextPreviewMedia($event)">›</button>
+    }
+
+    <div
+      class="media-preview-stage"
+      [class.is-zoomed]="previewZoom() > 1"
+      (click)="$event.stopPropagation()"
+      (pointerdown)="onPreviewPointerDown($event)"
+      (pointermove)="onPreviewPointerMove($event)"
+      (pointerup)="onPreviewPointerUp($event)"
+      (pointercancel)="onPreviewPointerUp($event)"
+      (wheel)="onPreviewWheel($event)"
+    >
+      @if (media.type === 'image') {
+        <img
+          [src]="media.url"
+          [alt]="media.name"
+          [style.transform]="'translate(' + previewPan().x + 'px, ' + previewPan().y + 'px) scale(' + previewZoom() + ')'"
+        />
+      } @else {
+        <video
+          [src]="media.url"
+          controls
+          autoplay
+          [style.transform]="'translate(' + previewPan().x + 'px, ' + previewPan().y + 'px) scale(' + previewZoom() + ')'"
+        ></video>
+      }
+    </div>
+
+    @if (previewGallery().length > 1) {
+      <div class="media-preview-gallery" (click)="$event.stopPropagation()">
+        @for (galleryMedia of previewGallery(); track galleryMedia.id) {
+          <button
+            type="button"
+            [class.is-active]="galleryMedia.id === media.id"
+            (click)="selectPreviewMedia(galleryMedia, $event)"
+          >
+            @if (galleryMedia.type === 'image') {
+              <img [src]="galleryMedia.url" [alt]="galleryMedia.name" />
+            } @else {
+              <video [src]="galleryMedia.url" muted></video>
+            }
+          </button>
+        }
+      </div>
     }
   </div>
 }

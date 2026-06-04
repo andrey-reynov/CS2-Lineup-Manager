@@ -136,11 +136,13 @@ export class LineupStorage {
         if (cursor) {
           cursor.delete();
           cursor.continue();
+          return;
+        }
+
+        for (const media of mediaRecords) {
+          mediaStore.put(media);
         }
       };
-      for (const media of mediaRecords) {
-        mediaStore.put(media);
-      }
     });
   }
 
