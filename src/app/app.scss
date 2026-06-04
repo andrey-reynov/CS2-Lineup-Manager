@@ -24,14 +24,14 @@
   --vscode-overlay-bg: rgba(30, 30, 30, 0.92);
   --vscode-control-bg: rgba(255, 255, 255, 0.06);
   --vscode-control-hover: rgba(255, 255, 255, 0.1);
-  --vscode-icon-filter: invert(86%) sepia(0%) saturate(12%) hue-rotate(177deg) brightness(94%) contrast(83%);
-  --vscode-icon-active-filter: invert(100%) sepia(0%) saturate(0%) hue-rotate(31deg) brightness(104%) contrast(102%);
   --team-ct: #4b8dff;
   --team-t: #d58a38;
   --grenade-smoke: #8d9498;
   --grenade-flash: #d7ba7d;
   --grenade-molotov: #ce9178;
   --grenade-he: #f14c4c;
+  --left-panel-width: 330px;
+  --right-panel-width: 330px;
 
   display: block;
   min-height: 100dvh;
@@ -40,21 +40,49 @@
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: clamp(220px, 22vw, 300px) minmax(0, 1fr);
+  position: relative;
+  display: block;
   height: 100dvh;
   overflow: hidden;
 }
 
 .sidebar {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 18px;
+  z-index: 10;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  width: var(--left-panel-width);
   min-height: 0;
   padding: 22px;
   overflow: hidden;
-  background: var(--vscode-side-bar-bg);
-  border-right: 1px solid var(--vscode-border);
+  background: color-mix(in srgb, var(--vscode-side-bar-bg) 86%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px var(--vscode-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.panel-resize-edge {
+  position: absolute;
+  z-index: 20;
+  width: 12px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.panel-resize-edge.is-left {
+  top: 0;
+  right: -6px;
+  bottom: 0;
+}
+
+.panel-resize-edge.is-right {
+  top: 0;
+  bottom: 0;
+  left: -6px;
 }
 
 .brand {
@@ -102,13 +130,6 @@ h2 {
   line-height: 1;
 }
 
-.primary-nav {
-  display: grid;
-  gap: 8px;
-  padding: 24px 0;
-  border-bottom: 1px solid var(--vscode-border);
-}
-
 .sidebar-footer {
   display: grid;
   gap: 8px;
@@ -125,6 +146,7 @@ h2 {
 .zoom-controls button,
 .point-action-menu button,
 .grenade-button,
+.all-filter-button,
 .point-details button,
 .point-details input {
   font: inherit;
@@ -182,7 +204,7 @@ h2 {
   margin-bottom: 12px;
   color: var(--vscode-text-muted);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -309,7 +331,7 @@ h2 {
   min-height: 46px;
   margin-top: 4px;
   color: var(--vscode-text-strong);
-  font-weight: 800;
+  font-weight: 400;
   background: var(--vscode-accent);
   border: 0;
   border-radius: 8px;
@@ -328,34 +350,42 @@ h2 {
   min-height: 100dvh;
   height: 100dvh;
   overflow: hidden;
-  padding: 18px;
+  padding: 0;
   background: var(--vscode-editor-bg);
 }
 
 .empty-board {
   display: grid;
   place-items: center;
-  width: min(calc(100dvh - 36px), calc(100vw - 300px - 132px));
-  aspect-ratio: 1;
-  border: 1px solid var(--vscode-border);
-  border-radius: 8px;
-  box-shadow: 0 20px 60px var(--vscode-shadow);
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at center, #242426 0%, var(--vscode-editor-bg) 78%);
 }
 
 .empty-board span {
-  color: var(--vscode-text-strong);
-  font-size: 1.5rem;
-  font-weight: 900;
+  margin-left: calc(var(--left-panel-width) + 36px);
+  color: var(--vscode-text-muted);
+  font-size: 0.86rem;
+  font-weight: 400;
 }
 
 .settings-panel {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
   display: grid;
   gap: 12px;
-  width: min(420px, 100%);
-  padding: 18px;
-  background: var(--vscode-panel-bg);
-  border: 1px solid var(--vscode-border);
-  border-radius: 8px;
+  width: min(620px, calc(100vw - var(--left-panel-width) - 80px));
+  max-height: calc(100dvh - 64px);
+  min-width: min(420px, calc(100vw - var(--left-panel-width) - 80px));
+  overflow: auto;
+  padding: 0 4px 24px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .settings-panel h2 {
@@ -379,7 +409,8 @@ h2 {
   display: none;
 }
 
-.settings-toggle {
+.settings-toggle,
+.settings-group {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -391,18 +422,21 @@ h2 {
   border-radius: 8px;
 }
 
-.settings-toggle span {
+.settings-toggle span,
+.settings-group > div:first-child {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.settings-toggle strong {
+.settings-toggle strong,
+.settings-group strong {
   color: var(--vscode-text-strong);
   font-size: 0.9rem;
 }
 
-.settings-toggle small {
+.settings-toggle small,
+.settings-group small {
   color: var(--vscode-text-muted);
   font-size: 0.78rem;
   line-height: 1.3;
@@ -440,6 +474,74 @@ h2 {
   transform: translateX(18px);
 }
 
+.settings-group {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.settings-swatch-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-swatch-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-swatch {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 58px;
+  padding: 8px 6px;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.settings-team-colors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-team-colors > div {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-team-colors > div > strong {
+  color: var(--vscode-text-muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.settings-swatch-grid.is-icon-only {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.settings-swatch.is-icon-only {
+  min-height: 40px;
+  padding: 0;
+}
+
+.settings-swatch span {
+  display: block;
+  width: 24px;
+  height: 24px;
+  background: var(--swatch-color);
+  border: 1px solid color-mix(in srgb, var(--swatch-color) 70%, var(--vscode-text-strong));
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--swatch-color) 18%, transparent);
+}
+
+.settings-swatch.is-active,
+.settings-swatch:hover {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent-soft);
+  border-color: var(--vscode-focus-ring);
+}
+
 .settings-error {
   margin: 0;
   color: var(--vscode-error);
@@ -448,17 +550,17 @@ h2 {
 
 .level-switcher {
   position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 3;
-  display: grid;
+  top: 18px;
+  left: calc(var(--left-panel-width) + 36px);
+  z-index: 6;
+  display: flex;
   gap: 6px;
   padding: 6px;
-  background: var(--vscode-overlay-bg);
-  border: 1px solid var(--vscode-border);
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 86%, transparent);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   box-shadow: 0 10px 24px var(--vscode-shadow);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(16px);
 }
 
 .level-switcher button {
@@ -479,9 +581,8 @@ h2 {
 }
 
 .map-stage {
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
+  position: relative;
+  display: block;
   gap: 14px;
   width: 100%;
   height: 100%;
@@ -490,21 +591,21 @@ h2 {
 }
 
 .map-board {
-  position: relative;
-  align-self: center;
-  width: clamp(260px, min(calc(100dvh - 36px), calc(100vw - 300px - 132px)), 100%);
-  aspect-ratio: 1;
-  flex: 0 1 auto;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  border: 1px solid var(--vscode-border);
-  border-radius: 8px;
-  box-shadow: 0 20px 60px var(--vscode-shadow);
+  background: radial-gradient(circle at center, #242426 0%, var(--vscode-editor-bg) 78%);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   cursor: crosshair;
   touch-action: none;
 }
 
 .map-stage.has-point-details .map-board {
-  width: clamp(240px, min(calc(100dvh - 36px), calc(100vw - 300px - 620px)), 100%);
+  width: 100%;
 }
 
 .map-board.is-panning {
@@ -513,6 +614,17 @@ h2 {
 
 .map-board.is-panning:active {
   cursor: grabbing;
+}
+
+.map-surface {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(100vw, 100dvh);
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
 }
 
 .map-content {
@@ -721,68 +833,100 @@ h2 {
 }
 
 .zoom-controls {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  z-index: 3;
-  display: grid;
+  display: flex;
   gap: 6px;
-  padding: 6px;
-  background: var(--vscode-overlay-bg);
-  border: 1px solid var(--vscode-border);
-  border-radius: 8px;
-  box-shadow: 0 10px 24px var(--vscode-shadow);
-  backdrop-filter: blur(8px);
+  padding-left: 8px;
+  border-left: 1px solid var(--vscode-border-muted);
 }
 
 .zoom-controls button {
-  width: 42px;
-  height: 36px;
+  width: 52px;
+  height: 52px;
   padding: 0;
   color: var(--vscode-text);
-  font-size: 1.1rem;
-  font-weight: 900;
+  font-size: 0.76rem;
+  font-weight: 400;
   background: var(--vscode-control-bg);
   border: 1px solid var(--vscode-border-muted);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
-.zoom-controls button:hover {
+.zoom-controls button:hover,
+.zoom-controls button.is-active {
   color: var(--vscode-text-strong);
   background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
 }
 
 .grenade-filter {
-  display: grid;
-  gap: 8px;
-  width: 72px;
+  display: flex;
+  gap: 6px;
 }
 
-.right-controls {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 16px;
-  width: 72px;
+.map-bottom-rail {
+  position: absolute;
+  right: calc(var(--right-panel-width) + 36px);
+  left: calc(var(--left-panel-width) + 36px);
+  bottom: 18px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - var(--left-panel-width) - var(--right-panel-width) - 90px);
+  margin-inline: auto;
+  overflow: visible;
+  scrollbar-width: none;
+  padding: 8px;
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 84%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px var(--vscode-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.map-bottom-rail::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .side-filter {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
   gap: 6px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--vscode-border);
+  padding-right: 8px;
+  border-right: 1px solid var(--vscode-border-muted);
 }
 
-.side-filter button {
-  display: grid;
-  place-items: center;
-  gap: 5px;
-  min-height: 36px;
-  padding: 8px 6px;
+.all-filter-button {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  padding: 0;
   color: var(--vscode-text);
   font: inherit;
-  font-weight: 900;
+  font-size: 0.76rem;
+  font-weight: 400;
+  line-height: 1;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.side-filter button,
+.grenade-button {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  min-height: 42px;
+  padding: 6px;
+  color: var(--vscode-text);
+  font: inherit;
+  font-weight: 400;
   background: var(--vscode-control-bg);
   border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
@@ -790,40 +934,64 @@ h2 {
 }
 
 .side-filter button.is-active,
-.side-filter button:hover {
+.side-filter button:hover,
+.grenade-button.is-active,
+.grenade-button:hover,
+.all-filter-button.is-active,
+.all-filter-button:hover {
   color: var(--vscode-text-strong);
   background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
 }
 
-.side-filter img {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-  filter: var(--vscode-icon-filter);
+.side-filter button.is-ct-side.is-active,
+.side-filter button.is-ct-side:hover,
+.toggle-grid button.is-ct-side.is-active,
+.toggle-grid button.is-ct-side:hover {
+  background: color-mix(in srgb, var(--team-ct) 34%, var(--vscode-control-bg));
+  border-color: var(--team-ct);
 }
 
-.side-filter button.is-active img,
-.side-filter button:hover img {
-  filter: var(--vscode-icon-active-filter);
+.side-filter button.is-t-side.is-active,
+.side-filter button.is-t-side:hover,
+.toggle-grid button.is-t-side.is-active,
+.toggle-grid button.is-t-side:hover {
+  background: color-mix(in srgb, var(--team-t) 34%, var(--vscode-control-bg));
+  border-color: var(--team-t);
+}
+
+.rail-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
 }
 
 .side-filter small {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
+  font-weight: 400;
   line-height: 1;
 }
 
 .point-action-menu {
   position: absolute;
-  z-index: 4;
+  z-index: 8;
   display: grid;
   gap: 8px;
   box-sizing: border-box;
   width: 200px;
   padding: 10px;
-  background: var(--vscode-overlay-bg);
-  border: 1px solid var(--vscode-border);
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 88%, transparent);
+  border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   box-shadow: 0 18px 42px var(--vscode-shadow);
+  backdrop-filter: blur(16px);
 }
 
 .point-action-menu > span {
@@ -873,17 +1041,23 @@ h2 {
 }
 
 .point-details {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 11;
   display: flex;
-  flex: 0 0 clamp(360px, 34vw, 520px);
+  width: var(--right-panel-width);
   flex-direction: column;
   gap: 14px;
-  height: 100%;
   min-height: 0;
   overflow: auto;
   padding: 14px;
-  background: var(--vscode-panel-bg);
-  border: 1px solid var(--vscode-border);
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-panel-bg) 86%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px var(--vscode-shadow);
+  backdrop-filter: blur(16px);
 }
 
 .point-details.is-view {
@@ -912,34 +1086,6 @@ h2 {
 .field {
   display: grid;
   gap: 8px;
-}
-
-.lineup-hero {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  aspect-ratio: 1;
-  overflow: hidden;
-  padding: 0;
-  color: var(--vscode-text-muted);
-  font: inherit;
-  font-weight: 900;
-  background: var(--vscode-control-bg);
-  border: 1px solid var(--vscode-border);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.lineup-hero:disabled {
-  cursor: default;
-}
-
-.lineup-hero img,
-.lineup-hero video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .guide-slot {
@@ -1063,30 +1209,6 @@ h2 {
   text-transform: uppercase;
 }
 
-.condition-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.condition-list em,
-.condition-list small {
-  padding: 5px 8px;
-  color: var(--vscode-text);
-  font-size: 0.78rem;
-  font-style: normal;
-  font-weight: 800;
-  background: var(--vscode-control-bg);
-  border: 1px solid var(--vscode-border-muted);
-  border-radius: 999px;
-}
-
-.condition-chip.has-mouse-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .edit-button {
   min-height: 40px;
   margin-top: auto;
@@ -1121,10 +1243,6 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-}
-
-.toggle-grid.is-two-columns {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .toggle-grid.is-team-row {
@@ -1204,12 +1322,6 @@ h2 {
   width: 18px;
   height: 18px;
   object-fit: contain;
-  filter: var(--vscode-icon-filter);
-}
-
-.toggle-grid button.is-active img,
-.toggle-grid button:hover img {
-  filter: var(--vscode-icon-active-filter);
 }
 
 .toggle-grid button.is-active,
@@ -1460,44 +1572,11 @@ h2 {
   object-fit: cover;
 }
 
-.grenade-button {
-  display: grid;
-  place-items: center;
-  gap: 5px;
-  min-height: 62px;
-  padding: 8px 6px;
-  color: var(--vscode-text);
-  font-weight: 800;
-  background: var(--vscode-control-bg);
-  border: 1px solid var(--vscode-border-muted);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.grenade-button:hover,
-.grenade-button.is-active {
-  color: var(--vscode-text-strong);
-  background: var(--vscode-accent);
-  border-color: var(--vscode-focus-ring);
-}
-
-.grenade-button img {
-  width: 25px;
-  height: 25px;
-  object-fit: contain;
-  filter: var(--vscode-icon-filter);
-}
-
-.grenade-button.is-active img,
-.grenade-button:hover img {
-  filter: var(--vscode-icon-active-filter);
-}
-
 .grenade-button span {
   display: grid;
   place-items: center;
-  width: 25px;
-  height: 25px;
+  width: 22px;
+  height: 22px;
   font-size: 1.1rem;
   line-height: 1;
 }
@@ -1506,6 +1585,7 @@ h2 {
   max-width: 100%;
   overflow: hidden;
   font-size: 0.68rem;
+  font-weight: 400;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;

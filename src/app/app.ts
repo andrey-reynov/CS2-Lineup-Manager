@@ -1,4 +1,4 @@
-import { Component, HostListener, computed, signal } from '@angular/core';
+import { Component, HostBinding, HostListener, computed, signal } from '@angular/core';
 import {
   GrenadeCategoryId,
   LineupStorage,
@@ -103,6 +103,45 @@ type PreviewPanState = {
   startPanY: number;
 };
 
+type UserSettings = {
+  showMenuScrollbar: boolean;
+  leftPanelWidth: number;
+  rightPanelWidth: number;
+  resizePanelsTogether: boolean;
+  accentColorId: AccentColorId;
+  teamCtColorId: TeamCtColorId;
+  teamTColorId: TeamTColorId;
+};
+
+type AccentColorId = 'blue' | 'green' | 'gold' | 'red';
+type TeamCtColorId = 'sky' | 'azure' | 'steel' | 'cyan';
+type TeamTColorId = 'orange' | 'vermilion' | 'amber' | 'red';
+type PanelSide = 'left' | 'right';
+
+type AccentColorOption = {
+  id: AccentColorId;
+  label: string;
+  color: string;
+  hover: string;
+  soft: string;
+  focus: string;
+};
+
+type TeamColorOption<TId extends string> = {
+  id: TId;
+  label: string;
+  color: string;
+  soft: string;
+};
+
+type PanelResizeState = {
+  side: PanelSide;
+  pointerId: number;
+  startClientX: number;
+  startLeftWidth: number;
+  startRightWidth: number;
+};
+
 const GRENADE_CATEGORIES: GrenadeCategory[] = [
   {
     id: 'smoke',
@@ -156,6 +195,64 @@ const POINT_ACTION_MENU_HEIGHT = 216;
 const POINT_ACTION_MENU_GAP = 10;
 const POINT_ACTION_MENU_EDGE_PADDING = 8;
 const SHOW_MENU_SCROLLBAR_STORAGE_KEY = 'cs2nades:show-menu-scrollbar';
+const USER_SETTINGS_STORAGE_KEY = 'cs2nades:user-settings';
+const ACCENT_COLOR_OPTIONS: AccentColorOption[] = [
+  {
+    id: 'blue',
+    label: 'Blue',
+    color: '#007acc',
+    hover: '#0e639c',
+    soft: 'rgba(0, 122, 204, 0.18)',
+    focus: '#007fd4',
+  },
+  {
+    id: 'green',
+    label: 'Green',
+    color: '#2ea043',
+    hover: '#238636',
+    soft: 'rgba(46, 160, 67, 0.18)',
+    focus: '#3fb950',
+  },
+  {
+    id: 'gold',
+    label: 'Gold',
+    color: '#b89500',
+    hover: '#9e7f00',
+    soft: 'rgba(184, 149, 0, 0.2)',
+    focus: '#d7ba7d',
+  },
+  {
+    id: 'red',
+    label: 'Red',
+    color: '#c74e39',
+    hover: '#a33d2f',
+    soft: 'rgba(199, 78, 57, 0.18)',
+    focus: '#f14c4c',
+  },
+];
+const TEAM_CT_COLOR_OPTIONS: Array<TeamColorOption<TeamCtColorId>> = [
+  { id: 'sky', label: 'Sky', color: '#56b4e9', soft: 'rgba(86, 180, 233, 0.2)' },
+  { id: 'azure', label: 'Azure', color: '#4b8dff', soft: 'rgba(75, 141, 255, 0.2)' },
+  { id: 'steel', label: 'Steel', color: '#7aa2f7', soft: 'rgba(122, 162, 247, 0.2)' },
+  { id: 'cyan', label: 'Cyan', color: '#00b7c3', soft: 'rgba(0, 183, 195, 0.2)' },
+];
+const TEAM_T_COLOR_OPTIONS: Array<TeamColorOption<TeamTColorId>> = [
+  { id: 'orange', label: 'Orange', color: '#d58a38', soft: 'rgba(213, 138, 56, 0.2)' },
+  { id: 'vermilion', label: 'Vermilion', color: '#d55e00', soft: 'rgba(213, 94, 0, 0.2)' },
+  { id: 'amber', label: 'Amber', color: '#e5a50a', soft: 'rgba(229, 165, 10, 0.2)' },
+  { id: 'red', label: 'Red', color: '#c74e39', soft: 'rgba(199, 78, 57, 0.2)' },
+];
+const DEFAULT_USER_SETTINGS: UserSettings = {
+  showMenuScrollbar: false,
+  leftPanelWidth: 330,
+  rightPanelWidth: 330,
+  resizePanelsTogether: false,
+  accentColorId: 'blue',
+  teamCtColorId: 'azure',
+  teamTColorId: 'orange',
+};
+const PANEL_WIDTH_MIN = 280;
+const PANEL_WIDTH_MAX = 420;
 
 const DEFAULT_MAPS: TacticalMap[] = [
   {
@@ -382,6 +479,9 @@ export class App {
   protected readonly maps = DEFAULT_MAPS;
   protected readonly grenadeCategories = GRENADE_CATEGORIES;
   protected readonly teamSideOptions = TEAM_SIDE_OPTIONS;
+  protected readonly accentColorOptions = ACCENT_COLOR_OPTIONS;
+  protected readonly teamCtColorOptions = TEAM_CT_COLOR_OPTIONS;
+  protected readonly teamTColorOptions = TEAM_T_COLOR_OPTIONS;
   protected readonly movementRequirements = MOVEMENT_REQUIREMENTS;
   protected readonly mouseRequirements = MOUSE_REQUIREMENTS;
   protected readonly appView = signal<AppView>('home');
@@ -389,6 +489,7 @@ export class App {
   protected readonly selectedLevelId = signal(DEFAULT_MAPS[0].levels[0].id);
   protected readonly selectedGrenadeCategoryId = signal(GRENADE_CATEGORIES[0].id);
   protected readonly selectedTeamSide = signal<TeamSide>('ct');
+  protected readonly showAllLineups = signal(false);
   protected readonly addedPoints = signal<Record<string, MapPoint[]>>({});
   protected readonly draftPoint = signal<MapPoint | null>(null);
   protected readonly markerCounters = signal<Record<string, number>>({});
@@ -407,12 +508,62 @@ export class App {
   protected readonly selectedTrajectoryVertexId = signal<string | null>(null);
   protected readonly draftTrajectoryVertex = signal<TrajectoryVertex | null>(null);
   protected readonly hoveredTrajectorySegmentIndex = signal<number | null>(null);
-  protected readonly showMenuScrollbar = signal(this.loadShowMenuScrollbarPreference());
+  protected readonly userSettings = signal<UserSettings>(this.loadUserSettings());
+  protected readonly showMenuScrollbar = computed(() => this.userSettings().showMenuScrollbar);
+  protected readonly leftPanelWidth = computed(() => this.userSettings().leftPanelWidth);
+  protected readonly rightPanelWidth = computed(() => this.userSettings().rightPanelWidth);
+  protected readonly resizePanelsTogether = computed(() => this.userSettings().resizePanelsTogether);
+  protected readonly selectedAccentColorId = computed(() => this.userSettings().accentColorId);
+  protected readonly selectedTeamCtColorId = computed(() => this.userSettings().teamCtColorId);
+  protected readonly selectedTeamTColorId = computed(() => this.userSettings().teamTColorId);
+  protected readonly panelWidthMin = PANEL_WIDTH_MIN;
+  protected readonly panelWidthMax = PANEL_WIDTH_MAX;
+
+  @HostBinding('style.--vscode-accent')
+  protected get hostAccentColor(): string {
+    return this.currentAccentColor().color;
+  }
+
+  @HostBinding('style.--vscode-accent-hover')
+  protected get hostAccentHoverColor(): string {
+    return this.currentAccentColor().hover;
+  }
+
+  @HostBinding('style.--vscode-accent-soft')
+  protected get hostAccentSoftColor(): string {
+    return this.currentAccentColor().soft;
+  }
+
+  @HostBinding('style.--vscode-focus-ring')
+  protected get hostFocusRingColor(): string {
+    return this.currentAccentColor().focus;
+  }
+
+  @HostBinding('style.--team-ct')
+  protected get hostTeamCtColor(): string {
+    return this.currentTeamCtColor().color;
+  }
+
+  @HostBinding('style.--team-t')
+  protected get hostTeamTColor(): string {
+    return this.currentTeamTColor().color;
+  }
+
+  @HostBinding('style.--left-panel-width.px')
+  protected get hostLeftPanelWidth(): number {
+    return this.leftPanelWidth();
+  }
+
+  @HostBinding('style.--right-panel-width.px')
+  protected get hostRightPanelWidth(): number {
+    return this.rightPanelWidth();
+  }
 
   private readonly storage = new LineupStorage();
   private dragState: DragState | null = null;
   private trajectoryDragState: TrajectoryDragState | null = null;
   private previewPanState: PreviewPanState | null = null;
+  private panelResizeState: PanelResizeState | null = null;
   private suppressNextBoardClick = false;
 
   protected readonly selectedMap = computed(() => {
@@ -427,6 +578,7 @@ export class App {
   protected readonly currentPoints = computed(() => {
     const selectedGrenadeCategoryId = this.selectedGrenadeCategoryId();
     const selectedTeamSide = this.selectedTeamSide();
+    const showAllLineups = this.showAllLineups();
     const selectedMap = this.selectedMap();
     const selectedLevel = this.selectedLevel();
     if (!selectedMap || !selectedLevel) {
@@ -439,7 +591,10 @@ export class App {
       ...(this.draftPoint() ? [this.draftPoint()!] : []),
     ].filter((point) => (
       !point.grenadeCategoryId ||
-      (point.grenadeCategoryId === selectedGrenadeCategoryId && point.teamSide === selectedTeamSide)
+      (
+        point.teamSide === selectedTeamSide &&
+        (showAllLineups || point.grenadeCategoryId === selectedGrenadeCategoryId)
+      )
     ));
   });
 
@@ -515,14 +670,6 @@ export class App {
     this.draftPoint.set(null);
   }
 
-  protected selectHome(): void {
-    this.cancelTrajectoryInteraction();
-    this.appView.set('home');
-    this.selectedMapId.set(null);
-    this.closePointEditor();
-    this.draftPoint.set(null);
-  }
-
   protected selectSettings(): void {
     this.cancelTrajectoryInteraction();
     this.appView.set('settings');
@@ -541,6 +688,7 @@ export class App {
 
   protected selectGrenadeCategory(category: GrenadeCategory): void {
     this.cancelTrajectoryInteraction();
+    this.showAllLineups.set(false);
     this.selectedGrenadeCategoryId.set(category.id);
     this.closePointEditor();
   }
@@ -551,9 +699,69 @@ export class App {
     this.closePointEditor();
   }
 
+  protected selectAllLineups(): void {
+    this.cancelTrajectoryInteraction();
+    this.showAllLineups.set(true);
+    this.closePointEditor();
+  }
+
   protected setShowMenuScrollbar(showScrollbar: boolean): void {
-    this.showMenuScrollbar.set(showScrollbar);
-    this.saveShowMenuScrollbarPreference(showScrollbar);
+    this.updateUserSettings({ showMenuScrollbar: showScrollbar });
+  }
+
+  protected setAccentColor(accentColorId: AccentColorId): void {
+    if (!ACCENT_COLOR_OPTIONS.some((option) => option.id === accentColorId)) {
+      return;
+    }
+
+    this.updateUserSettings({ accentColorId });
+  }
+
+  protected setResizePanelsTogether(resizeTogether: boolean): void {
+    this.updateUserSettings({ resizePanelsTogether: resizeTogether });
+  }
+
+  protected setTeamCtColor(teamCtColorId: TeamCtColorId): void {
+    if (!TEAM_CT_COLOR_OPTIONS.some((option) => option.id === teamCtColorId)) {
+      return;
+    }
+
+    this.updateUserSettings({ teamCtColorId });
+  }
+
+  protected setTeamTColor(teamTColorId: TeamTColorId): void {
+    if (!TEAM_T_COLOR_OPTIONS.some((option) => option.id === teamTColorId)) {
+      return;
+    }
+
+    this.updateUserSettings({ teamTColorId });
+  }
+
+  protected currentAccentColor(): AccentColorOption {
+    return ACCENT_COLOR_OPTIONS.find((option) => option.id === this.userSettings().accentColorId)
+      ?? ACCENT_COLOR_OPTIONS[0];
+  }
+
+  protected currentTeamCtColor(): TeamColorOption<TeamCtColorId> {
+    return TEAM_CT_COLOR_OPTIONS.find((option) => option.id === this.userSettings().teamCtColorId)
+      ?? TEAM_CT_COLOR_OPTIONS[0];
+  }
+
+  protected currentTeamTColor(): TeamColorOption<TeamTColorId> {
+    return TEAM_T_COLOR_OPTIONS.find((option) => option.id === this.userSettings().teamTColorId)
+      ?? TEAM_T_COLOR_OPTIONS[0];
+  }
+
+  protected startPanelResize(side: PanelSide, event: PointerEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.panelResizeState = {
+      side,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startLeftWidth: this.leftPanelWidth(),
+      startRightWidth: this.rightPanelWidth(),
+    };
   }
 
   protected updateSelectedPointTeamSide(teamSide: TeamSide): void {
@@ -569,10 +777,6 @@ export class App {
       return;
     }
 
-    if (this.selectedPointMode() === 'edit' || this.trajectoryEditMode()) {
-      return;
-    }
-
     const target = event.target as HTMLElement;
     if (
       target.closest('button') ||
@@ -582,8 +786,13 @@ export class App {
       target.closest('.point-details') ||
       target.closest('.point-action-menu') ||
       target.closest('.level-switcher') ||
+      target.closest('.map-bottom-rail') ||
       target.closest('.zoom-controls')
     ) {
+      return;
+    }
+
+    if ((this.selectedPointMode() === 'edit' || this.trajectoryEditMode()) && this.mapZoom() <= 1) {
       return;
     }
 
@@ -607,25 +816,14 @@ export class App {
       return;
     }
 
+    if (this.dragState && this.dragState.pointerId === event.pointerId) {
+      this.updateMapPanFromDrag(event);
+      return;
+    }
+
     if (this.trajectoryEditMode() === 'create' && this.selectedPointMode() === 'edit') {
       this.updateDraftTrajectoryFromPointer(event);
-      return;
     }
-
-    if (!this.dragState || this.dragState.pointerId !== event.pointerId || this.mapZoom() <= 1) {
-      return;
-    }
-
-    const dx = event.clientX - this.dragState.startClientX;
-    const dy = event.clientY - this.dragState.startClientY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      this.dragState.hasMoved = true;
-    }
-
-    this.mapPan.set({
-      x: this.dragState.startPanX + dx,
-      y: this.dragState.startPanY + dy,
-    });
   }
 
   protected onBoardPointerUp(event: PointerEvent): void {
@@ -649,7 +847,17 @@ export class App {
       return;
     }
 
-    if ((event.target as HTMLElement).closest('button')) {
+    if (this.isMapControlTarget(event.target as HTMLElement)) {
+      return;
+    }
+
+    if (this.trajectoryEditMode() === 'create' && this.selectedPointMode() === 'edit') {
+      if (this.suppressNextBoardClick) {
+        this.suppressNextBoardClick = false;
+        return;
+      }
+
+      this.placeDraftTrajectoryVertex(event);
       return;
     }
 
@@ -679,7 +887,7 @@ export class App {
       return;
     }
 
-    if ((event.target as HTMLElement).closest('button')) {
+    if (this.isMapControlTarget(event.target as HTMLElement)) {
       return;
     }
 
@@ -691,9 +899,7 @@ export class App {
 
     const board = event.currentTarget as HTMLElement;
     const rect = board.getBoundingClientRect();
-    const x = (point.x / 100) * rect.width;
-    const y = (point.y / 100) * rect.height;
-    const position = this.getPointActionMenuPosition(x, y, rect);
+    const position = this.getPointActionMenuPosition(event.clientX - rect.left, event.clientY - rect.top, rect);
     this.pointActionMenu.set({
       pointId: point.id,
       x: position.x,
@@ -1385,6 +1591,51 @@ export class App {
     }
   }
 
+  @HostListener('window:pointermove', ['$event'])
+  protected onWindowPointerMove(event: PointerEvent): void {
+    const resizeState = this.panelResizeState;
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const delta = event.clientX - resizeState.startClientX;
+    const resizedWidth = this.clamp(
+      resizeState.side === 'left'
+        ? resizeState.startLeftWidth + delta
+        : resizeState.startRightWidth - delta,
+      PANEL_WIDTH_MIN,
+      PANEL_WIDTH_MAX,
+    );
+
+    if (this.resizePanelsTogether()) {
+      this.userSettings.update((settings) => ({
+        ...settings,
+        leftPanelWidth: resizedWidth,
+        rightPanelWidth: resizedWidth,
+      }));
+      return;
+    }
+
+    this.userSettings.update((settings) => ({
+      ...settings,
+      ...(resizeState.side === 'left'
+        ? { leftPanelWidth: resizedWidth }
+        : { rightPanelWidth: resizedWidth }),
+    }));
+  }
+
+  @HostListener('window:pointerup', ['$event'])
+  protected onWindowPointerUp(event: PointerEvent): void {
+    const resizeState = this.panelResizeState;
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    this.panelResizeState = null;
+    this.saveUserSettings(this.userSettings());
+  }
+
   private addPointFromBoardEvent(event: MouseEvent, board: HTMLElement): MapPoint | null {
     const selectedMap = this.selectedMap();
     const selectedLevel = this.selectedLevel();
@@ -1590,17 +1841,44 @@ export class App {
     return `${pointId}:trajectory:${Date.now()}:${Math.round(Math.random() * 100000)}`;
   }
 
-  private loadShowMenuScrollbarPreference(): boolean {
+  private loadUserSettings(): UserSettings {
     try {
-      return globalThis.localStorage?.getItem(SHOW_MENU_SCROLLBAR_STORAGE_KEY) === 'true';
+      const rawSettings = globalThis.localStorage?.getItem(USER_SETTINGS_STORAGE_KEY);
+      const parsedSettings = rawSettings ? JSON.parse(rawSettings) as Partial<UserSettings> : {};
+      const accentColor = ACCENT_COLOR_OPTIONS.find((option) => option.id === parsedSettings.accentColorId);
+      const legacyPanelWidth = (parsedSettings as Partial<UserSettings> & { panelWidth?: number }).panelWidth;
+      const fallbackPanelWidth = Number(legacyPanelWidth ?? DEFAULT_USER_SETTINGS.leftPanelWidth);
+      const teamCtColor = TEAM_CT_COLOR_OPTIONS.find((option) => option.id === parsedSettings.teamCtColorId);
+      const teamTColor = TEAM_T_COLOR_OPTIONS.find((option) => option.id === parsedSettings.teamTColorId);
+      return {
+        showMenuScrollbar: typeof parsedSettings.showMenuScrollbar === 'boolean'
+          ? parsedSettings.showMenuScrollbar
+          : globalThis.localStorage?.getItem(SHOW_MENU_SCROLLBAR_STORAGE_KEY) === 'true',
+        leftPanelWidth: this.clamp(Number(parsedSettings.leftPanelWidth ?? fallbackPanelWidth), PANEL_WIDTH_MIN, PANEL_WIDTH_MAX),
+        rightPanelWidth: this.clamp(Number(parsedSettings.rightPanelWidth ?? fallbackPanelWidth), PANEL_WIDTH_MIN, PANEL_WIDTH_MAX),
+        resizePanelsTogether: parsedSettings.resizePanelsTogether ?? DEFAULT_USER_SETTINGS.resizePanelsTogether,
+        accentColorId: accentColor?.id ?? DEFAULT_USER_SETTINGS.accentColorId,
+        teamCtColorId: teamCtColor?.id ?? DEFAULT_USER_SETTINGS.teamCtColorId,
+        teamTColorId: teamTColor?.id ?? DEFAULT_USER_SETTINGS.teamTColorId,
+      };
     } catch {
-      return false;
+      return DEFAULT_USER_SETTINGS;
     }
   }
 
-  private saveShowMenuScrollbarPreference(showScrollbar: boolean): void {
+  private updateUserSettings(patch: Partial<UserSettings>): void {
+    const settings = {
+      ...this.userSettings(),
+      ...patch,
+    };
+    this.userSettings.set(settings);
+    this.saveUserSettings(settings);
+  }
+
+  private saveUserSettings(settings: UserSettings): void {
     try {
-      globalThis.localStorage?.setItem(SHOW_MENU_SCROLLBAR_STORAGE_KEY, String(showScrollbar));
+      globalThis.localStorage?.setItem(USER_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      globalThis.localStorage?.setItem(SHOW_MENU_SCROLLBAR_STORAGE_KEY, String(settings.showMenuScrollbar));
     } catch {
       // Preference persistence is optional when storage is unavailable.
     }
@@ -1613,7 +1891,7 @@ export class App {
       return;
     }
 
-    const rect = board.getBoundingClientRect();
+    const rect = this.getMapSurfaceRect(board);
     const pan = this.mapPan();
     const cursorX = clientX - rect.left;
     const cursorY = clientY - rect.top;
@@ -1631,6 +1909,38 @@ export class App {
       x: cursorX - mapX * zoom,
       y: cursorY - mapY * zoom,
     });
+  }
+
+  private updateMapPanFromDrag(event: PointerEvent): void {
+    if (!this.dragState || this.mapZoom() <= 1) {
+      return;
+    }
+
+    const dx = event.clientX - this.dragState.startClientX;
+    const dy = event.clientY - this.dragState.startClientY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      this.dragState.hasMoved = true;
+    }
+
+    this.mapPan.set({
+      x: this.dragState.startPanX + dx,
+      y: this.dragState.startPanY + dy,
+    });
+  }
+
+  private placeDraftTrajectoryVertex(event: MouseEvent): void {
+    const point = this.selectedPoint();
+    const board = event.currentTarget as HTMLElement;
+    if (!point) {
+      return;
+    }
+
+    const draft = {
+      id: this.createTrajectoryVertexId(point.id),
+      ...this.getMapPercentFromClientPoint(event.clientX, event.clientY, board),
+    };
+    this.draftTrajectoryVertex.set(null);
+    this.addTrajectoryVertex(point, draft);
   }
 
   private resetMapView(): void {
@@ -1679,6 +1989,17 @@ export class App {
     this.previewZoom.set(1);
     this.previewPan.set({ x: 0, y: 0 });
     this.previewPanState = null;
+  }
+
+  private isMapControlTarget(target: HTMLElement): boolean {
+    return Boolean(
+      target.closest('button') ||
+      target.closest('.point-details') ||
+      target.closest('.point-action-menu') ||
+      target.closest('.level-switcher') ||
+      target.closest('.map-bottom-rail') ||
+      target.closest('.zoom-controls'),
+    );
   }
 
   private updateSelectedPoint(patch: Partial<MapPoint>, options: { save?: boolean } = {}): void {
@@ -1792,13 +2113,17 @@ export class App {
   }
 
   private getMapPercentFromClientPoint(clientX: number, clientY: number, board: HTMLElement): Pick<MapPoint, 'x' | 'y'> {
-    const rect = board.getBoundingClientRect();
+    const rect = this.getMapSurfaceRect(board);
     const pan = this.mapPan();
     const zoom = this.mapZoom();
     const x = this.toPercent((clientX - rect.left - pan.x) / zoom, rect.width);
     const y = this.toPercent((clientY - rect.top - pan.y) / zoom, rect.height);
 
     return { x, y };
+  }
+
+  private getMapSurfaceRect(board: HTMLElement): DOMRect {
+    return board.querySelector('.map-surface')?.getBoundingClientRect() ?? board.getBoundingClientRect();
   }
 
   private getPointActionMenuPosition(x: number, y: number, boardRect: DOMRect): Pick<PointActionMenu, 'x' | 'y'> {

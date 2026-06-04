@@ -8,18 +8,6 @@
       </div>
     </section>
 
-    <nav class="primary-nav" aria-label="Application sections">
-      <button
-        class="nav-button"
-        type="button"
-        [class.is-active]="appView() === 'home'"
-        (click)="selectHome()"
-      >
-        <span class="nav-icon" aria-hidden="true">H</span>
-        Home
-      </button>
-    </nav>
-
     <section class="map-list" aria-label="Map list">
       <div class="section-heading">
         <span>Maps</span>
@@ -64,6 +52,12 @@
         Settings
       </button>
     </nav>
+    <div
+      class="panel-resize-edge is-left"
+      role="separator"
+      aria-label="Resize navigation panel"
+      (pointerdown)="startPanelResize('left', $event)"
+    ></div>
   </aside>
 
   <section class="content" aria-label="Map workspace">
@@ -86,6 +80,79 @@
               (change)="setShowMenuScrollbar($any($event.target).checked)"
             />
           </label>
+          <label class="settings-toggle">
+            <span>
+              <strong>Resize panels together</strong>
+              <small>Drag either panel edge to resize both side panels.</small>
+            </span>
+            <input
+              type="checkbox"
+              [checked]="resizePanelsTogether()"
+              (change)="setResizePanelsTogether($any($event.target).checked)"
+            />
+          </label>
+          <section class="settings-group" aria-label="Accent color">
+            <div>
+              <strong>Accent color</strong>
+              <small>Buttons, active borders, focus states.</small>
+            </div>
+            <div class="settings-swatch-grid">
+              @for (accent of accentColorOptions; track accent.id) {
+                <button
+                  type="button"
+                  class="settings-swatch"
+                  [class.is-active]="selectedAccentColorId() === accent.id"
+                  [style.--swatch-color]="accent.color"
+                  (click)="setAccentColor(accent.id)"
+                >
+                  <span aria-hidden="true"></span>
+                  {{ accent.label }}
+                </button>
+              }
+            </div>
+          </section>
+          <section class="settings-group" aria-label="Team colors">
+            <div>
+              <strong>Team colors</strong>
+              <small>Marker outlines and team controls.</small>
+            </div>
+            <div class="settings-team-colors">
+              <div aria-label="CT color">
+                <strong>CT</strong>
+                <div class="settings-swatch-grid is-icon-only">
+                  @for (color of teamCtColorOptions; track color.id) {
+                    <button
+                      type="button"
+                      class="settings-swatch is-icon-only"
+                      [class.is-active]="selectedTeamCtColorId() === color.id"
+                      [style.--swatch-color]="color.color"
+                      [attr.aria-label]="'CT ' + color.label"
+                      (click)="setTeamCtColor(color.id)"
+                    >
+                      <span aria-hidden="true"></span>
+                    </button>
+                  }
+                </div>
+              </div>
+              <div aria-label="T color">
+                <strong>T</strong>
+                <div class="settings-swatch-grid is-icon-only">
+                  @for (color of teamTColorOptions; track color.id) {
+                    <button
+                      type="button"
+                      class="settings-swatch is-icon-only"
+                      [class.is-active]="selectedTeamTColorId() === color.id"
+                      [style.--swatch-color]="color.color"
+                      [attr.aria-label]="'T ' + color.label"
+                      (click)="setTeamTColor(color.id)"
+                    >
+                      <span aria-hidden="true"></span>
+                    </button>
+                  }
+                </div>
+              </div>
+            </div>
+          </section>
           <label class="settings-action">
             <input type="file" accept=".zip,application/zip" (change)="importZip($event)" />
             Import ZIP
@@ -111,87 +178,89 @@
             (contextmenu)="onBoardContextMenu($event)"
             (wheel)="onBoardWheel($event)"
           >
-            <div
-              class="map-content"
-              [style.transform]="'translate(' + mapPan().x + 'px, ' + mapPan().y + 'px) scale(' + mapZoom() + ')'"
-            >
-              <img
-                class="map-image"
-                [src]="level.imageUrl"
-                [alt]="map.name + ' radar, ' + level.name"
-              />
+            <div class="map-surface">
+              <div
+                class="map-content"
+                [style.transform]="'translate(' + mapPan().x + 'px, ' + mapPan().y + 'px) scale(' + mapZoom() + ')'"
+              >
+                <img
+                  class="map-image"
+                  [src]="level.imageUrl"
+                  [alt]="map.name + ' radar, ' + level.name"
+                />
 
-              @if (selectedPoint(); as selected) {
-                @if (selectedTrajectoryPoints().length > 1) {
-                  <svg class="trajectory-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                    <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPoints()"></polyline>
-                    <polyline class="trajectory-line" [attr.points]="trajectorySvgPoints()"></polyline>
-                  </svg>
+                @if (selectedPoint(); as selected) {
+                  @if (selectedTrajectoryPoints().length > 1) {
+                    <svg class="trajectory-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                      <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPoints()"></polyline>
+                      <polyline class="trajectory-line" [attr.points]="trajectorySvgPoints()"></polyline>
+                    </svg>
 
-                  @if (selectedPointMode() === 'edit') {
-                    @for (midpoint of trajectorySegmentMidpoints(); track midpoint.id) {
+                    @if (selectedPointMode() === 'edit') {
+                      @for (midpoint of trajectorySegmentMidpoints(); track midpoint.id) {
+                        <button
+                          class="trajectory-midpoint"
+                          type="button"
+                          [class.is-hovered]="isTrajectorySegmentHovered(midpoint.index)"
+                          [style.left.%]="midpoint.x"
+                          [style.top.%]="midpoint.y"
+                          aria-label="Insert trajectory point"
+                          (pointerenter)="setHoveredTrajectorySegment(midpoint.index)"
+                          (pointerleave)="setHoveredTrajectorySegment(null)"
+                          (pointerdown)="startTrajectorySegmentDrag(midpoint.index, $event)"
+                        ></button>
+                      }
+                    }
+
+                    @for (vertex of selected.trajectory?.vertices ?? []; track vertex.id; let isLast = $last) {
                       <button
-                        class="trajectory-midpoint"
+                        class="trajectory-vertex"
                         type="button"
-                        [class.is-hovered]="isTrajectorySegmentHovered(midpoint.index)"
-                        [style.left.%]="midpoint.x"
-                        [style.top.%]="midpoint.y"
-                        aria-label="Insert trajectory point"
-                        (pointerenter)="setHoveredTrajectorySegment(midpoint.index)"
-                        (pointerleave)="setHoveredTrajectorySegment(null)"
-                        (pointerdown)="startTrajectorySegmentDrag(midpoint.index, $event)"
+                        [class.is-start]="isLast"
+                        [class.is-selected]="isTrajectoryVertexSelected(vertex.id)"
+                        [class.is-dragging]="isDraggingTrajectoryVertex(vertex.id)"
+                        [style.left.%]="vertex.x"
+                        [style.top.%]="vertex.y"
+                        [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
+                        (pointerdown)="startTrajectoryVertexDrag(vertex.id, $event)"
+                        (click)="appendTrajectoryFromVertex(vertex.id, $event)"
                       ></button>
                     }
                   }
-
-                  @for (vertex of selected.trajectory?.vertices ?? []; track vertex.id; let isLast = $last) {
-                    <button
-                      class="trajectory-vertex"
-                      type="button"
-                      [class.is-start]="isLast"
-                      [class.is-selected]="isTrajectoryVertexSelected(vertex.id)"
-                      [class.is-dragging]="isDraggingTrajectoryVertex(vertex.id)"
-                      [style.left.%]="vertex.x"
-                      [style.top.%]="vertex.y"
-                      [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
-                      (pointerdown)="startTrajectoryVertexDrag(vertex.id, $event)"
-                      (click)="appendTrajectoryFromVertex(vertex.id, $event)"
-                    ></button>
-                  }
                 }
-              }
 
-              @for (point of currentPoints(); track point.id) {
-                <button
-                  class="map-point"
-                  type="button"
-                  [class.is-spawn]="point.kind === 'spawn'"
-                  [class.is-bomb]="point.kind === 'bomb'"
-                  [class.is-lineup]="point.kind === 'lineup'"
-                  [class.is-custom]="point.kind === 'custom'"
-                  [class.is-smoke]="point.grenadeCategoryId === 'smoke'"
-                  [class.is-flash]="point.grenadeCategoryId === 'flash'"
-                  [class.is-molotov]="point.grenadeCategoryId === 'molotov'"
-                  [class.is-he]="point.grenadeCategoryId === 'he'"
-                  [class.is-ct]="point.teamSide === 'ct'"
-                  [class.is-t]="point.teamSide === 't'"
-                  [class.is-dragging]="isDraggingResultPoint(point.id)"
-                  [style.left.%]="point.x"
-                  [style.top.%]="point.y"
-                  [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
-                  (pointerdown)="startResultPointDrag(point, $event)"
-                  (click)="openPointEditor(point, $event)"
-                >
-                  @if (grenadeCategoryForPoint(point)?.iconUrl; as iconUrl) {
-                    <span
-                      class="map-point-icon"
-                      aria-hidden="true"
-                      [style.mask-image]="'url(' + iconUrl + ')'"
-                      [style.-webkit-mask-image]="'url(' + iconUrl + ')'"
-                    ></span>
-                  }
-                </button>
-              }
+                @for (point of currentPoints(); track point.id) {
+                  <button
+                    class="map-point"
+                    type="button"
+                    [class.is-spawn]="point.kind === 'spawn'"
+                    [class.is-bomb]="point.kind === 'bomb'"
+                    [class.is-lineup]="point.kind === 'lineup'"
+                    [class.is-custom]="point.kind === 'custom'"
+                    [class.is-smoke]="point.grenadeCategoryId === 'smoke'"
+                    [class.is-flash]="point.grenadeCategoryId === 'flash'"
+                    [class.is-molotov]="point.grenadeCategoryId === 'molotov'"
+                    [class.is-he]="point.grenadeCategoryId === 'he'"
+                    [class.is-ct]="point.teamSide === 'ct'"
+                    [class.is-t]="point.teamSide === 't'"
+                    [class.is-dragging]="isDraggingResultPoint(point.id)"
+                    [style.left.%]="point.x"
+                    [style.top.%]="point.y"
+                    [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
+                    (pointerdown)="startResultPointDrag(point, $event)"
+                    (click)="openPointEditor(point, $event)"
+                  >
+                    @if (grenadeCategoryForPoint(point)?.iconUrl; as iconUrl) {
+                      <span
+                        class="map-point-icon"
+                        aria-hidden="true"
+                        [style.mask-image]="'url(' + iconUrl + ')'"
+                        [style.-webkit-mask-image]="'url(' + iconUrl + ')'"
+                      ></span>
+                    }
+                  </button>
+                }
+              </div>
             </div>
 
             @if (map.levels.length > 1) {
@@ -209,9 +278,60 @@
               </div>
             }
 
-            <div class="zoom-controls" aria-label="Map zoom">
-              <button type="button" aria-label="Zoom in" (click)="zoomIn($event)">+</button>
-              <button type="button" aria-label="Zoom out" (click)="zoomOut($event)">-</button>
+            <div class="map-bottom-rail" aria-label="Map filters and zoom">
+              <div class="side-filter" aria-label="Team side">
+                @for (side of teamSideOptions; track side.id) {
+                  <button
+                    type="button"
+                    [class.is-active]="selectedTeamSide() === side.id"
+                    [class.is-ct-side]="side.id === 'ct'"
+                    [class.is-t-side]="side.id === 't'"
+                    (click)="selectTeamSide(side.id)"
+                  >
+                    <span
+                      class="rail-icon"
+                      aria-hidden="true"
+                      [style.mask-image]="'url(' + side.iconUrl + ')'"
+                      [style.-webkit-mask-image]="'url(' + side.iconUrl + ')'"
+                    ></span>
+                    <small>{{ side.label }}</small>
+                  </button>
+                }
+              </div>
+              <div class="grenade-filter" aria-label="Grenade categories">
+                <button
+                  class="all-filter-button"
+                  type="button"
+                  [class.is-active]="showAllLineups()"
+                  (click)="selectAllLineups()"
+                >
+                  All
+                </button>
+                @for (category of grenadeCategories; track category.id) {
+                  <button
+                    class="grenade-button"
+                    type="button"
+                    [class.is-active]="!showAllLineups() && selectedGrenadeCategoryId() === category.id"
+                    (click)="selectGrenadeCategory(category)"
+                  >
+                    @if (category.iconUrl) {
+                      <span
+                        class="rail-icon"
+                        aria-hidden="true"
+                        [style.mask-image]="'url(' + category.iconUrl + ')'"
+                        [style.-webkit-mask-image]="'url(' + category.iconUrl + ')'"
+                      ></span>
+                    } @else {
+                      <span aria-hidden="true">*</span>
+                    }
+                    <small>{{ category.label }}</small>
+                  </button>
+                }
+              </div>
+              <div class="zoom-controls" aria-label="Map zoom">
+                <button type="button" aria-label="Zoom out" (click)="zoomOut($event)">-</button>
+                <button type="button" aria-label="Zoom in" (click)="zoomIn($event)">+</button>
+              </div>
             </div>
 
             @if (pointActionMenu(); as menu) {
@@ -246,6 +366,12 @@
       @if (selectedPoint(); as point) {
         @if (selectedPointMode() === 'view') {
           <aside class="point-details is-view" aria-label="Lineup details">
+            <div
+              class="panel-resize-edge is-right"
+              role="separator"
+              aria-label="Resize lineup panel"
+              (pointerdown)="startPanelResize('right', $event)"
+            ></div>
             <div class="point-details-header">
               <span>{{ displayTitle(point) }}</span>
               <button type="button" aria-label="Close" (click)="closePointEditor()">x</button>
@@ -313,6 +439,12 @@
           </aside>
         } @else {
           <aside class="point-details" aria-label="Lineup editor">
+            <div
+              class="panel-resize-edge is-right"
+              role="separator"
+              aria-label="Resize lineup panel"
+              (pointerdown)="startPanelResize('right', $event)"
+            ></div>
             <div class="point-details-header">
               <span>{{ displayTitle(point) }}</span>
               <button type="button" aria-label="Close" (click)="closePointEditor()">x</button>
@@ -411,6 +543,8 @@
                   <button
                     type="button"
                     [class.is-active]="point.teamSide === side.id"
+                    [class.is-ct-side]="side.id === 'ct'"
+                    [class.is-t-side]="side.id === 't'"
                     (click)="updateSelectedPointTeamSide(side.id)"
                   >
                     <img [src]="side.iconUrl" alt="" aria-hidden="true" />
@@ -467,40 +601,6 @@
               <button type="button" class="delete-button" (click)="deleteMarker(point.id, $event)">Delete</button>
             </div>
           </aside>
-        }
-      } @else {
-        @if (appView() === 'map') {
-          <div class="right-controls" aria-label="Map filters">
-            <div class="side-filter" aria-label="Team side">
-              @for (side of teamSideOptions; track side.id) {
-                <button
-                  type="button"
-                  [class.is-active]="selectedTeamSide() === side.id"
-                  (click)="selectTeamSide(side.id)"
-                >
-                  <img [src]="side.iconUrl" alt="" aria-hidden="true" />
-                  <small>{{ side.label }}</small>
-                </button>
-              }
-            </div>
-            <div class="grenade-filter" aria-label="Grenade categories">
-              @for (category of grenadeCategories; track category.id) {
-                <button
-                  class="grenade-button"
-                  type="button"
-                  [class.is-active]="selectedGrenadeCategoryId() === category.id"
-                  (click)="selectGrenadeCategory(category)"
-                >
-                  @if (category.iconUrl) {
-                    <img [src]="category.iconUrl" alt="" aria-hidden="true" />
-                  } @else {
-                    <span aria-hidden="true">*</span>
-                  }
-                  <small>{{ category.label }}</small>
-                </button>
-              }
-            </div>
-          </div>
         }
       }
     </div>

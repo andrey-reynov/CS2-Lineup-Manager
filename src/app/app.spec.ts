@@ -12,16 +12,42 @@ function pointerEvent(type: string, init: PointerEventInit): PointerEvent {
 }
 
 function setBoardRect(board: Element): void {
+  const rect = {
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100,
+    right: 100,
+    bottom: 100,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  };
   Object.defineProperty(board, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => rect,
+  });
+  Object.defineProperty(board.querySelector('.map-surface') ?? board, 'getBoundingClientRect', {
+    configurable: true,
     value: () => ({
-      left: 0,
-      top: 0,
-      width: 100,
-      height: 100,
-      right: 100,
-      bottom: 100,
-      x: 0,
-      y: 0,
+      ...rect,
+      toJSON: () => ({}),
+    }),
+  });
+}
+
+function setSurfaceRect(board: Element, rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>): void {
+  Object.defineProperty(board.querySelector('.map-surface') ?? board, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      x: rect.left,
+      y: rect.top,
       toJSON: () => ({}),
     }),
   });
@@ -65,6 +91,7 @@ describe('App', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('h1')?.textContent).toContain('CS2 Nades');
     expect(compiled.querySelector('.empty-board')?.textContent).toContain('Choose a map');
+    expect(Array.from(compiled.querySelectorAll('.nav-button')).some((button) => button.textContent?.includes('Home'))).toBe(false);
     expect(compiled.querySelector('.map-button.is-active')).toBeFalsy();
     expect(compiled.querySelectorAll('.map-point')).toHaveLength(0);
   });
@@ -81,11 +108,106 @@ describe('App', () => {
     expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('Dust2');
     expect(compiled.querySelector('.map-button.is-active')?.textContent).toContain('0 lineups');
     expect(compiled.querySelector('.map-image')).toBeTruthy();
-    expect(compiled.querySelector('.right-controls')).toBeTruthy();
+    expect(compiled.querySelector('.map-bottom-rail')).toBeTruthy();
+    expect(compiled.querySelector('.right-controls')).toBeFalsy();
+  });
+
+  it('should show every grenade category for the selected side when the All nade filter is active', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    app.addedPoints.set({
+      'dust2:main': [
+        {
+          id: 'ct-smoke',
+          label: '1',
+          mapId: 'dust2',
+          levelId: 'main',
+          x: 20,
+          y: 20,
+          kind: 'custom',
+          grenadeCategoryId: 'smoke',
+          teamSide: 'ct',
+          trajectory: { vertices: [] },
+        },
+        {
+          id: 'ct-flash',
+          label: '2',
+          mapId: 'dust2',
+          levelId: 'main',
+          x: 40,
+          y: 40,
+          kind: 'custom',
+          grenadeCategoryId: 'flash',
+          teamSide: 'ct',
+          trajectory: { vertices: [] },
+        },
+        {
+          id: 't-flash',
+          label: '3',
+          mapId: 'dust2',
+          levelId: 'main',
+          x: 60,
+          y: 60,
+          kind: 'custom',
+          grenadeCategoryId: 'flash',
+          teamSide: 't',
+          trajectory: { vertices: [] },
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    expect(compiled.querySelectorAll('.map-point')).toHaveLength(1);
+
+    (compiled.querySelector('.all-filter-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.all-filter-button')?.classList.contains('is-active')).toBe(true);
+    expect(compiled.querySelectorAll('.map-point')).toHaveLength(2);
+    expect(compiled.querySelector('.grenade-filter .all-filter-button')).toBeTruthy();
+
+    (Array.from(compiled.querySelectorAll('.side-filter button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'T')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.all-filter-button')?.classList.contains('is-active')).toBe(true);
+    expect(compiled.querySelectorAll('.map-point')).toHaveLength(1);
+  });
+
+  it('should zoom with normalized plus and minus buttons', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const board = compiled.querySelector('.map-board') as HTMLElement;
+    setBoardRect(board);
+
+    const zoomButtons = compiled.querySelectorAll('.zoom-controls button') as NodeListOf<HTMLButtonElement>;
+    zoomButtons[1].click();
+    fixture.detectChanges();
+
+    expect(app.mapZoom()).toBe(1.25);
+
+    zoomButtons[0].click();
+    fixture.detectChanges();
+
+    expect(app.mapZoom()).toBe(1);
+    expect(app.mapPan()).toEqual({ x: 0, y: 0 });
   });
 
   it('should hide menu scrollbar by default and reveal it from settings', async () => {
     localStorage.removeItem('cs2nades:show-menu-scrollbar');
+    localStorage.removeItem('cs2nades:user-settings');
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -102,7 +224,76 @@ describe('App', () => {
 
     expect(compiled.querySelector('.map-buttons')?.classList.contains('show-scrollbar')).toBe(true);
     expect(localStorage.getItem('cs2nades:show-menu-scrollbar')).toBe('true');
+    expect(JSON.parse(localStorage.getItem('cs2nades:user-settings') ?? '{}').showMenuScrollbar).toBe(true);
     localStorage.removeItem('cs2nades:show-menu-scrollbar');
+    localStorage.removeItem('cs2nades:user-settings');
+  });
+
+  it('should resize panels individually and together from panel edges', async () => {
+    localStorage.removeItem('cs2nades:user-settings');
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const host = fixture.debugElement.nativeElement as HTMLElement;
+
+    const leftEdge = compiled.querySelector('.sidebar .panel-resize-edge') as HTMLElement;
+    leftEdge.dispatchEvent(pointerEvent('pointerdown', { pointerId: 11, clientX: 330, clientY: 10 }));
+    window.dispatchEvent(pointerEvent('pointermove', { pointerId: 11, clientX: 380, clientY: 10 }));
+    window.dispatchEvent(pointerEvent('pointerup', { pointerId: 11, clientX: 380, clientY: 10 }));
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as any).leftPanelWidth()).toBe(380);
+    expect((fixture.componentInstance as any).rightPanelWidth()).toBe(330);
+    expect(host.style.getPropertyValue('--left-panel-width')).toBe('380px');
+
+    (compiled.querySelector('.sidebar-footer .nav-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const resizeTogether = Array.from(compiled.querySelectorAll('.settings-toggle input'))[1] as HTMLInputElement;
+    resizeTogether.checked = true;
+    resizeTogether.dispatchEvent(new Event('change', { bubbles: true }));
+    fixture.detectChanges();
+
+    const settings = JSON.parse(localStorage.getItem('cs2nades:user-settings') ?? '{}');
+    expect(settings.resizePanelsTogether).toBe(true);
+
+    (fixture.componentInstance as any).startPanelResize('right', pointerEvent('pointerdown', { pointerId: 12, clientX: 400, clientY: 10 }));
+    window.dispatchEvent(pointerEvent('pointermove', { pointerId: 12, clientX: 360, clientY: 10 }));
+    window.dispatchEvent(pointerEvent('pointerup', { pointerId: 12, clientX: 360, clientY: 10 }));
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as any).leftPanelWidth()).toBe(370);
+    expect((fixture.componentInstance as any).rightPanelWidth()).toBe(370);
+
+    localStorage.removeItem('cs2nades:user-settings');
+  });
+
+  it('should apply accent and team color preferences', async () => {
+    localStorage.removeItem('cs2nades:user-settings');
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const host = fixture.debugElement.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.sidebar-footer .nav-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    (Array.from(compiled.querySelectorAll('.settings-swatch'))[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(host.style.getPropertyValue('--vscode-accent')).toBe('#2ea043');
+
+    (Array.from(compiled.querySelectorAll('[aria-label="CT color"] .settings-swatch'))[0] as HTMLButtonElement).click();
+    (Array.from(compiled.querySelectorAll('[aria-label="T color"] .settings-swatch'))[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('[aria-label="CT color"]')?.textContent?.trim()).toBe('CT');
+    expect(compiled.querySelector('[aria-label="T color"]')?.textContent?.trim()).toBe('T');
+    expect(host.style.getPropertyValue('--team-ct')).toBe('#56b4e9');
+    expect(host.style.getPropertyValue('--team-t')).toBe('#d55e00');
+    expect(host.style.getPropertyValue('--vscode-accent')).toBe('#2ea043');
+    localStorage.removeItem('cs2nades:user-settings');
   });
 
   it('should create draft spots with double click instead of single click', async () => {
@@ -199,6 +390,21 @@ describe('App', () => {
     expect(compiled.querySelector('.trajectory-line')).toBeFalsy();
   });
 
+  it('should place the draft trajectory vertex with a map click', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const board = compiled.querySelector('.map-board') as HTMLElement;
+
+    board.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 20, clientY: 20 }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().trajectory.vertices).toHaveLength(1);
+    expect(app.selectedPoint().trajectory.vertices[0].x).toBe(20);
+    expect(app.selectedPoint().trajectory.vertices[0].y).toBe(20);
+    expect(app.trajectoryEditMode()).toBe('edit');
+  });
+
   it('should drag the final point with zoom and pan aware coordinates', async () => {
     const fixture = TestBed.createComponent(App);
     const compiled = await createLineup(fixture);
@@ -216,6 +422,45 @@ describe('App', () => {
 
     expect(app.selectedPoint().x).toBe(30);
     expect(app.selectedPoint().y).toBe(30);
+  });
+
+  it('should zoom relative to the centered map surface instead of the full board', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const board = compiled.querySelector('.map-board') as HTMLElement;
+    setBoardRect(board);
+    setSurfaceRect(board, { left: 25, top: 0, width: 50, height: 50 });
+    const app = fixture.componentInstance as any;
+
+    board.dispatchEvent(new WheelEvent('wheel', { bubbles: true, clientX: 25, clientY: 25, deltaY: -120 }));
+    fixture.detectChanges();
+
+    expect(app.mapZoom()).toBeGreaterThan(1);
+    expect(app.mapPan().x).toBe(0);
+  });
+
+  it('should pan the map while trajectory creation remains uncommitted', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const board = compiled.querySelector('.map-board') as HTMLElement;
+    app.mapZoom.set(2);
+    app.mapPan.set({ x: 0, y: 0 });
+    fixture.detectChanges();
+
+    board.dispatchEvent(pointerEvent('pointerdown', { pointerId: 7, clientX: 50, clientY: 50 }));
+    board.dispatchEvent(pointerEvent('pointermove', { pointerId: 7, clientX: 70, clientY: 70 }));
+    board.dispatchEvent(pointerEvent('pointerup', { pointerId: 7, clientX: 70, clientY: 70 }));
+    fixture.detectChanges();
+
+    expect(app.mapPan()).toEqual({ x: 20, y: 20 });
+    expect(app.trajectoryEditMode()).toBe('create');
+    expect(app.draftTrajectoryVertex()).toBeTruthy();
+    expect(app.selectedPoint().trajectory.vertices).toEqual([]);
   });
 
   it('should keep a lineup selected when clicking its point in edit mode', async () => {
@@ -245,6 +490,20 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect(compiled.querySelector('.point-details input')).toBeTruthy();
+  });
+
+  it('should keep the selected lineup when clicking the bottom rail', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const rail = compiled.querySelector('.map-bottom-rail') as HTMLElement;
+    (compiled.querySelector('.save-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    rail.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 95 }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.point-details')).toBeTruthy();
+    expect(compiled.querySelector('.map-point')).toBeTruthy();
   });
 
   it('should persist screenshot role assignments in the selected point media pool', async () => {
