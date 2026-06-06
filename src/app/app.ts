@@ -2,6 +2,7 @@ import { Component, HostBinding, HostListener, computed, signal } from '@angular
 import {
   GrenadeCategoryId,
   LineupStorage,
+  StorageMigrationStatus,
   StoredMap,
   StoredMedia,
   StoredPoint,
@@ -733,10 +734,7 @@ export class App {
   }
 
   constructor() {
-    void this.loadStoredMaps();
-    void this.loadStoredPoints();
-    // Content workspace folders are intentionally disabled until the feature is used by the UI.
-    // void this.ensureContentWorkspace();
+    void this.initializeStorage();
   }
 
   protected selectMap(map: TacticalMap): void {
@@ -2616,6 +2614,48 @@ export class App {
     }));
     if (options.save !== false && nextSavedPoint?.grenadeCategoryId) {
       void this.storage.savePoint(this.toStoredPoint(nextSavedPoint));
+    }
+  }
+
+  private async initializeStorage(): Promise<void> {
+    await this.offerDesktopMigration();
+    await this.loadStoredMaps();
+    await this.loadStoredPoints();
+  }
+
+  private async offerDesktopMigration(): Promise<void> {
+    const getMigrationStatus = this.storage.getMigrationStatus?.bind(this.storage);
+    const migrateLegacyData = this.storage.migrateLegacyData?.bind(this.storage);
+    if (!getMigrationStatus || !migrateLegacyData) {
+      return;
+    }
+
+    const status = await getMigrationStatus();
+    if (!status.isDesktop || !status.needsMigration) {
+      return;
+    }
+
+    const confirmed = globalThis.confirm?.(
+      [
+        'CS2 Nades can move your saved lineups and media to desktop local storage.',
+        '',
+        'Old browser storage will be kept as a backup.',
+        'Move data now?',
+      ].join('\n'),
+    ) ?? false;
+    if (!confirmed) {
+      return;
+    }
+
+    const contentRoot = globalThis.prompt?.(
+      'Choose user content folder path',
+      status.defaultContentRoot ?? status.contentRoot ?? '',
+    )?.trim();
+
+    try {
+      await migrateLegacyData(contentRoot || undefined);
+    } catch (error) {
+      this.importError.set(error instanceof Error ? error.message : 'Desktop migration failed');
     }
   }
 

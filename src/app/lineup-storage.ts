@@ -114,7 +114,31 @@ const POINTS_STORE = 'points';
 const MEDIA_STORE = 'media';
 const MAPS_STORE = 'maps';
 
-export class LineupStorage {
+export type StorageMigrationStatus = {
+  isDesktop: boolean;
+  needsMigration: boolean;
+  completed: boolean;
+  defaultContentRoot?: string;
+  contentRoot?: string;
+  error?: string;
+};
+
+export interface LineupStoragePort {
+  loadMaps(): Promise<StoredMap[]>;
+  saveMap(map: StoredMap): Promise<void>;
+  loadPoints(): Promise<StoredPoint[]>;
+  savePoint(point: StoredPoint): Promise<void>;
+  deletePoint(pointId: string): Promise<void>;
+  replaceAll(points: StoredPoint[]): Promise<void>;
+  replaceAllMaps(maps: StoredMap[]): Promise<void>;
+  exportZip(points: StoredPoint[], maps?: StoredMap[]): Promise<Blob>;
+  importZip(file: File): Promise<StoredPoint[]>;
+  importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }>;
+  getMigrationStatus?(): Promise<StorageMigrationStatus>;
+  migrateLegacyData?(contentRoot?: string): Promise<void>;
+}
+
+export class WebLineupStorage implements LineupStoragePort {
   private dbPromise: Promise<IDBDatabase> | undefined;
 
   async loadMaps(): Promise<StoredMap[]> {
@@ -545,5 +569,542 @@ export class LineupStorage {
     const { imageUrl, ...record } = map;
     void imageUrl;
     return record;
+  }
+}
+
+type TauriCore = {
+  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+};
+
+type TauriDatabase = {
+  execute(query: string, bindValues?: unknown[]): Promise<unknown>;
+  select<T>(query: string, bindValues?: unknown[]): Promise<T>;
+};
+
+type TauriDatabaseCtor = {
+  load(path: string): Promise<TauriDatabase>;
+};
+
+type ContentWorkspaceInfo = {
+  rootDir: string;
+  contentDir: string;
+  mapsDir: string;
+  systemDir: string;
+};
+
+type LineupRow = Omit<StoredPoint, 'media' | 'trajectory' | 'requirements'> & {
+  requirementsJson: string;
+  trajectoryJson: string;
+};
+
+type MediaRow = Omit<StoredMedia, 'blob' | 'url'> & {
+  path: string;
+  sortOrder: number;
+};
+
+type MapRow = Omit<StoredMap, 'imageBlob' | 'imageUrl'> & {
+  imagePath: string;
+};
+
+class DesktopLineupStorage implements LineupStoragePort {
+  private readonly zipStorage = new WebLineupStorage();
+  private dbPromise: Promise<TauriDatabase> | undefined;
+  private corePromise: Promise<TauriCore> | undefined;
+  private workspacePromise: Promise<ContentWorkspaceInfo> | undefined;
+
+  constructor(private readonly legacyStorage: WebLineupStorage) {}
+
+  async loadMaps(): Promise<StoredMap[]> {
+    const db = await this.db();
+    const workspace = await this.workspace();
+    const rows = await db.select<MapRow[]>('SELECT * FROM maps ORDER BY name');
+    return Promise.all(rows.map(async (row) => {
+      const blob = await this.readBlob(workspace.rootDir, row.imagePath, row.imageMimeType);
+      return {
+        id: row.id,
+        name: row.name,
+        location: row.location,
+        tags: this.parseJson<string[]>(row.tags as unknown as string, []),
+        levelId: row.levelId,
+        levelName: row.levelName,
+        levelDescription: row.levelDescription,
+        imageName: row.imageName,
+        imageMimeType: row.imageMimeType,
+        imageBlob: blob,
+        imageUrl: URL.createObjectURL(blob),
+      };
+    }));
+  }
+
+  async saveMap(map: StoredMap): Promise<void> {
+    const db = await this.db();
+    const workspace = await this.workspace([map.name]);
+    const imagePath = `Content/Maps/${this.safeFolderName(map.id)}/Meta/${this.safeFileName(map.imageName)}`;
+    await this.writeBlob(workspace.rootDir, imagePath, map.imageBlob);
+    await db.execute(
+      `INSERT INTO maps (
+        id, name, location, tags, levelId, levelName, levelDescription, imageName, imageMimeType, imagePath
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT(id) DO UPDATE SET
+        name=excluded.name,
+        location=excluded.location,
+        tags=excluded.tags,
+        levelId=excluded.levelId,
+        levelName=excluded.levelName,
+        levelDescription=excluded.levelDescription,
+        imageName=excluded.imageName,
+        imageMimeType=excluded.imageMimeType,
+        imagePath=excluded.imagePath`,
+      [
+        map.id,
+        map.name,
+        map.location,
+        JSON.stringify(map.tags),
+        map.levelId,
+        map.levelName,
+        map.levelDescription,
+        map.imageName,
+        map.imageMimeType,
+        imagePath,
+      ],
+    );
+  }
+
+  async loadPoints(): Promise<StoredPoint[]> {
+    const db = await this.db();
+    const workspace = await this.workspace();
+    const lineups = await db.select<LineupRow[]>('SELECT * FROM lineups ORDER BY id');
+    const mediaRows = await db.select<(MediaRow & { lineupId: string })[]>(
+      `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType, media_assets.path,
+        lineup_media.role, lineup_media.sortOrder, lineup_media.lineupId
+      FROM lineup_media
+      JOIN media_assets ON media_assets.id = lineup_media.mediaId
+      ORDER BY lineup_media.lineupId, lineup_media.sortOrder`,
+    );
+
+    const mediaByLineup = new Map<string, Array<MediaRow & { lineupId: string }>>();
+    for (const media of mediaRows) {
+      mediaByLineup.set(media.lineupId, [...(mediaByLineup.get(media.lineupId) ?? []), media]);
+    }
+
+    return Promise.all(lineups.map(async (lineup) => ({
+      id: lineup.id,
+      label: lineup.label,
+      mapId: lineup.mapId,
+      levelId: lineup.levelId,
+      x: lineup.x,
+      y: lineup.y,
+      kind: 'custom',
+      grenadeCategoryId: lineup.grenadeCategoryId,
+      teamSide: lineup.teamSide,
+      title: lineup.title,
+      description: lineup.description ?? '',
+      requirements: this.parseJson<string[]>(lineup.requirementsJson, []),
+      heroMediaId: lineup.heroMediaId,
+      trajectory: this.parseJson<StoredTrajectory>(lineup.trajectoryJson, { vertices: [] }),
+      media: await Promise.all((mediaByLineup.get(lineup.id) ?? []).map(async (media) => {
+        const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+        return {
+          id: media.id,
+          name: media.name,
+          type: media.type,
+          mimeType: media.mimeType,
+          blob,
+          url: URL.createObjectURL(blob),
+          role: media.role ?? 'detail',
+        };
+      })),
+    } satisfies StoredPoint)));
+  }
+
+  async savePoint(point: StoredPoint): Promise<void> {
+    const db = await this.db();
+    const workspace = await this.workspace([point.mapId]);
+    await this.upsertLineup(db, point);
+    await db.execute('DELETE FROM lineup_media WHERE lineupId = $1', [point.id]);
+    await Promise.all(point.media.map(async (media, index) => {
+      const path = this.contentMediaPath(point, media);
+      await this.writeBlob(workspace.rootDir, path, media.blob);
+      await db.execute(
+        `INSERT INTO media_assets (id, name, type, mimeType, path, checksum, createdAt)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(id) DO UPDATE SET
+          name=excluded.name,
+          type=excluded.type,
+          mimeType=excluded.mimeType,
+          path=excluded.path`,
+        [media.id, media.name, media.type, media.mimeType, path, '', new Date().toISOString()],
+      );
+      await db.execute(
+        `INSERT INTO lineup_media (lineupId, mediaId, role, sortOrder)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT(lineupId, mediaId) DO UPDATE SET role=excluded.role, sortOrder=excluded.sortOrder`,
+        [point.id, media.id, media.role ?? 'detail', index],
+      );
+    }));
+  }
+
+  async deletePoint(pointId: string): Promise<void> {
+    const db = await this.db();
+    await db.execute('DELETE FROM lineup_media WHERE lineupId = $1', [pointId]);
+    await db.execute('DELETE FROM lineups WHERE id = $1', [pointId]);
+  }
+
+  async replaceAll(points: StoredPoint[]): Promise<void> {
+    const db = await this.db();
+    await db.execute('DELETE FROM lineup_media');
+    await db.execute('DELETE FROM lineups');
+    for (const point of points) {
+      await this.savePoint(point);
+    }
+  }
+
+  async replaceAllMaps(maps: StoredMap[]): Promise<void> {
+    const db = await this.db();
+    await db.execute('DELETE FROM maps');
+    for (const map of maps) {
+      await this.saveMap(map);
+    }
+  }
+
+  exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
+    return this.zipStorage.exportZip(points, maps);
+  }
+
+  importZip(file: File): Promise<StoredPoint[]> {
+    return this.zipStorage.importZip(file);
+  }
+
+  importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }> {
+    return this.zipStorage.importZipData(file);
+  }
+
+  async getMigrationStatus(): Promise<StorageMigrationStatus> {
+    try {
+      const db = await this.db();
+      const workspace = await this.workspace();
+      const rows = await db.select<Array<{ value: string }>>(
+        'SELECT value FROM app_meta WHERE key = $1',
+        ['legacyMigrationCompleted'],
+      );
+      const completed = rows[0]?.value === 'true';
+      const [legacyPoints, legacyMaps] = await Promise.all([
+        this.legacyStorage.loadPoints(),
+        this.legacyStorage.loadMaps(),
+      ]);
+      return {
+        isDesktop: true,
+        needsMigration: !completed && (legacyPoints.length > 0 || legacyMaps.length > 0),
+        completed,
+        defaultContentRoot: workspace.rootDir,
+        contentRoot: workspace.rootDir,
+      };
+    } catch (error) {
+      return {
+        isDesktop: true,
+        needsMigration: false,
+        completed: false,
+        error: error instanceof Error ? error.message : 'Desktop storage is unavailable',
+      };
+    }
+  }
+
+  async migrateLegacyData(contentRoot?: string): Promise<void> {
+    this.workspacePromise = undefined;
+    const workspace = await this.workspace(undefined, contentRoot);
+    const [points, maps] = await Promise.all([
+      this.legacyStorage.loadPoints(),
+      this.legacyStorage.loadMaps(),
+    ]);
+    await this.replaceAllMaps(maps);
+    await this.replaceAll(points);
+    const db = await this.db();
+    await db.execute(
+      `INSERT INTO app_meta (key, value) VALUES ($1, $2)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      ['legacyMigrationCompleted', 'true'],
+    );
+    await db.execute(
+      `INSERT INTO app_meta (key, value) VALUES ($1, $2)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      ['contentRoot', workspace.rootDir],
+    );
+  }
+
+  private async db(): Promise<TauriDatabase> {
+    if (!this.dbPromise) {
+      this.dbPromise = this.loadDatabase();
+    }
+    return this.dbPromise;
+  }
+
+  private async loadDatabase(): Promise<TauriDatabase> {
+    await this.workspace();
+    const Database = await this.loadSql();
+    const db = await Database.load('sqlite:Content/System/cs2nades.sqlite');
+    await this.ensureSchema(db);
+    return db;
+  }
+
+  private async ensureSchema(db: TauriDatabase): Promise<void> {
+    await db.execute(`CREATE TABLE IF NOT EXISTS lineups (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      mapId TEXT NOT NULL,
+      levelId TEXT NOT NULL,
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      kind TEXT NOT NULL,
+      grenadeCategoryId TEXT NOT NULL,
+      teamSide TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      requirementsJson TEXT NOT NULL,
+      trajectoryJson TEXT NOT NULL,
+      heroMediaId TEXT
+    )`);
+    await db.execute(`CREATE TABLE IF NOT EXISTS media_assets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      mimeType TEXT NOT NULL,
+      path TEXT NOT NULL,
+      checksum TEXT,
+      createdAt TEXT NOT NULL
+    )`);
+    await db.execute(`CREATE TABLE IF NOT EXISTS lineup_media (
+      lineupId TEXT NOT NULL,
+      mediaId TEXT NOT NULL,
+      role TEXT NOT NULL,
+      sortOrder INTEGER NOT NULL,
+      PRIMARY KEY (lineupId, mediaId)
+    )`);
+    await db.execute(`CREATE TABLE IF NOT EXISTS maps (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      location TEXT NOT NULL,
+      tags TEXT NOT NULL,
+      levelId TEXT NOT NULL,
+      levelName TEXT NOT NULL,
+      levelDescription TEXT NOT NULL,
+      imageName TEXT NOT NULL,
+      imageMimeType TEXT NOT NULL,
+      imagePath TEXT NOT NULL
+    )`);
+    await db.execute('CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    await db.execute(
+      `INSERT INTO app_meta (key, value) VALUES ($1, $2)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      ['schemaVersion', '1'],
+    );
+  }
+
+  private async upsertLineup(db: TauriDatabase, point: StoredPoint): Promise<void> {
+    await db.execute(
+      `INSERT INTO lineups (
+        id, label, mapId, levelId, x, y, kind, grenadeCategoryId, teamSide, title, description,
+        requirementsJson, trajectoryJson, heroMediaId
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      ON CONFLICT(id) DO UPDATE SET
+        label=excluded.label,
+        mapId=excluded.mapId,
+        levelId=excluded.levelId,
+        x=excluded.x,
+        y=excluded.y,
+        kind=excluded.kind,
+        grenadeCategoryId=excluded.grenadeCategoryId,
+        teamSide=excluded.teamSide,
+        title=excluded.title,
+        description=excluded.description,
+        requirementsJson=excluded.requirementsJson,
+        trajectoryJson=excluded.trajectoryJson,
+        heroMediaId=excluded.heroMediaId`,
+      [
+        point.id,
+        point.label,
+        point.mapId,
+        point.levelId,
+        point.x,
+        point.y,
+        point.kind,
+        point.grenadeCategoryId,
+        point.teamSide,
+        point.title,
+        point.description ?? '',
+        JSON.stringify(point.requirements),
+        JSON.stringify(point.trajectory ?? { vertices: [] }),
+        point.heroMediaId ?? null,
+      ],
+    );
+  }
+
+  private async workspace(mapNames: string[] = [], contentRoot?: string): Promise<ContentWorkspaceInfo> {
+    if (!this.workspacePromise || contentRoot) {
+      const core = await this.core();
+      this.workspacePromise = core.invoke<ContentWorkspaceInfo>('ensure_content_workspace', {
+        mapNames,
+        contentRoot,
+      });
+    }
+    return this.workspacePromise;
+  }
+
+  private async writeBlob(contentRoot: string, relativePath: string, blob: Blob): Promise<void> {
+    const core = await this.core();
+    await core.invoke('write_content_file', {
+      contentRoot,
+      relativePath,
+      bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
+    });
+  }
+
+  private async readBlob(contentRoot: string, relativePath: string, mimeType: string): Promise<Blob> {
+    const core = await this.core();
+    const bytes = await core.invoke<number[]>('read_content_file', { contentRoot, relativePath });
+    return new Blob([new Uint8Array(bytes)], { type: mimeType });
+  }
+
+  private async core(): Promise<TauriCore> {
+    if (!this.corePromise) {
+      this.corePromise = this.loadCore();
+    }
+    return this.corePromise;
+  }
+
+  private async loadCore(): Promise<TauriCore> {
+    if (!('__TAURI_INTERNALS__' in globalThis)) {
+      throw new Error('Tauri runtime is not available');
+    }
+    return import('@tauri-apps/api/core');
+  }
+
+  private async loadSql(): Promise<TauriDatabaseCtor> {
+    const module = await import('@tauri-apps/plugin-sql');
+    return module.default;
+  }
+
+  private parseJson<T>(value: string, fallback: T): T {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private safeFileName(name: string): string {
+    return name.replace(/[^\w.-]+/g, '_');
+  }
+
+  private safeFolderName(name: string): string {
+    const safeName = name.replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '_').replace(/\s+/g, ' ').trim();
+    return safeName || '_Unknown';
+  }
+
+  private contentMediaPath(point: StoredPoint, media: StoredMedia): string {
+    const lineupName = this.safeFolderName(point.title || point.label || point.id);
+    const role = media.role ?? 'detail';
+    return [
+      'Content',
+      'Maps',
+      this.safeFolderName(point.mapId),
+      'User',
+      'Media',
+      lineupName,
+      `${role}-${media.id}-${this.safeFileName(media.name)}`,
+    ].join('/');
+  }
+}
+
+export class LineupStorage implements LineupStoragePort {
+  private readonly webStorage = new WebLineupStorage();
+  private desktopStorage: DesktopLineupStorage | undefined;
+  private useDesktop = false;
+  private initialized = false;
+
+  async loadMaps(): Promise<StoredMap[]> {
+    return this.activeStorage().then((storage) => storage.loadMaps());
+  }
+
+  async saveMap(map: StoredMap): Promise<void> {
+    return this.activeStorage().then((storage) => storage.saveMap(map));
+  }
+
+  async loadPoints(): Promise<StoredPoint[]> {
+    return this.activeStorage().then((storage) => storage.loadPoints());
+  }
+
+  async savePoint(point: StoredPoint): Promise<void> {
+    return this.activeStorage().then((storage) => storage.savePoint(point));
+  }
+
+  async deletePoint(pointId: string): Promise<void> {
+    return this.activeStorage().then((storage) => storage.deletePoint(pointId));
+  }
+
+  async replaceAll(points: StoredPoint[]): Promise<void> {
+    return this.activeStorage().then((storage) => storage.replaceAll(points));
+  }
+
+  async replaceAllMaps(maps: StoredMap[]): Promise<void> {
+    return this.activeStorage().then((storage) => storage.replaceAllMaps(maps));
+  }
+
+  async exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
+    return this.activeStorage().then((storage) => storage.exportZip(points, maps));
+  }
+
+  async importZip(file: File): Promise<StoredPoint[]> {
+    return this.activeStorage().then((storage) => storage.importZip(file));
+  }
+
+  async importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }> {
+    return this.activeStorage().then((storage) => storage.importZipData(file));
+  }
+
+  async getMigrationStatus(): Promise<StorageMigrationStatus> {
+    const desktop = await this.desktop();
+    if (!desktop) {
+      return { isDesktop: false, needsMigration: false, completed: true };
+    }
+
+    const status = await desktop.getMigrationStatus?.();
+    if (status?.completed && !status.error) {
+      this.useDesktop = true;
+    }
+    return status ?? { isDesktop: true, needsMigration: false, completed: false };
+  }
+
+  async migrateLegacyData(contentRoot?: string): Promise<void> {
+    const desktop = await this.desktop();
+    if (!desktop) {
+      return;
+    }
+
+    await desktop.migrateLegacyData?.(contentRoot);
+    this.useDesktop = true;
+  }
+
+  private async activeStorage(): Promise<LineupStoragePort> {
+    const desktop = await this.desktop();
+    if (!desktop) {
+      return this.webStorage;
+    }
+
+    if (!this.initialized) {
+      const status = await desktop.getMigrationStatus?.();
+      this.useDesktop = !status?.error && (Boolean(status?.completed) || !status?.needsMigration);
+      this.initialized = true;
+    }
+
+    return this.useDesktop ? desktop : this.webStorage;
+  }
+
+  private async desktop(): Promise<DesktopLineupStorage | undefined> {
+    if (!('__TAURI_INTERNALS__' in globalThis)) {
+      return undefined;
+    }
+
+    this.desktopStorage ??= new DesktopLineupStorage(this.webStorage);
+    return this.desktopStorage;
   }
 }

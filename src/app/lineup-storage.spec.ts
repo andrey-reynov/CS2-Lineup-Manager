@@ -2,6 +2,14 @@ import { LineupStorage, StoredMap, StoredPoint } from './lineup-storage';
 import JSZip from 'jszip';
 
 describe('LineupStorage', () => {
+  it('should use web storage fallback outside Tauri', async () => {
+    const storage = new LineupStorage();
+    await expect(storage.getMigrationStatus()).resolves.toMatchObject({
+      isDesktop: false,
+      needsMigration: false,
+    });
+  });
+
   it('should export and import a ZIP manifest with media', async () => {
     const storage = new LineupStorage();
     const point: StoredPoint = {
