@@ -23,10 +23,14 @@ export type StoredMedia = {
   blob: Blob;
   url: string;
   role?: MediaRole;
+  createdAt?: string;
+  sourceLineupId?: string;
+  sourceLineupTitle?: string;
 };
 
 export type StoredPoint = {
   id: string;
+  resultSpotId?: string;
   label: string;
   mapId: string;
   levelId: string;
@@ -41,6 +45,25 @@ export type StoredPoint = {
   media: StoredMedia[];
   heroMediaId?: string;
   trajectory?: StoredTrajectory;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type StoredResultSpot = {
+  id: string;
+  label: string;
+  mapId: string;
+  levelId: string;
+  x: number;
+  y: number;
+  grenadeCategoryId: GrenadeCategoryId;
+  teamSide: TeamSide;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type StoredResultSpotWithLineups = StoredResultSpot & {
+  lineups: StoredPoint[];
 };
 
 export type StoredMap = {
@@ -71,6 +94,7 @@ type MediaRecord = {
   mimeType: string;
   blob: Blob;
   role?: MediaRole;
+  createdAt?: string;
 };
 
 type ExportMedia = Omit<StoredMedia, 'blob' | 'url'> & {
@@ -134,6 +158,14 @@ export interface LineupStoragePort {
   exportZip(points: StoredPoint[], maps?: StoredMap[]): Promise<Blob>;
   importZip(file: File): Promise<StoredPoint[]>;
   importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }>;
+  loadResultSpotsWithLineups?(): Promise<StoredResultSpotWithLineups[]>;
+  saveResultSpot?(spot: StoredResultSpot): Promise<void>;
+  deleteResultSpot?(spotId: string): Promise<void>;
+  saveLineupVariant?(lineup: StoredPoint): Promise<void>;
+  deleteLineupVariant?(lineupId: string): Promise<void>;
+  loadMediaAssets?(): Promise<StoredMedia[]>;
+  addMediaAsset?(media: StoredMedia, mapId?: string): Promise<StoredMedia>;
+  attachMediaToLineup?(lineupId: string, media: StoredMedia, role: MediaRole, sortOrder?: number): Promise<void>;
   getMigrationStatus?(): Promise<StorageMigrationStatus>;
   migrateLegacyData?(contentRoot?: string): Promise<void>;
 }
@@ -179,8 +211,10 @@ export class WebLineupStorage implements LineupStoragePort {
         .filter((media) => media.pointId === point.id)
         .map((media) => [media.id, media]));
 
+      const resultSpotId = point.resultSpotId ?? point.id;
       return {
         ...point,
+        resultSpotId,
         media: point.media
           .map((media) => mediaById.get(media.id))
           .filter((media): media is MediaRecord => Boolean(media))
@@ -192,8 +226,13 @@ export class WebLineupStorage implements LineupStoragePort {
             blob: media.blob,
             url: URL.createObjectURL(media.blob),
             role: media.role ?? 'detail',
+            createdAt: media.createdAt,
+            sourceLineupId: media.pointId,
+            sourceLineupTitle: point.title,
           })),
         trajectory: point.trajectory ?? { vertices: [] },
+        createdAt: point.createdAt,
+        updatedAt: point.updatedAt,
       };
     });
   }
@@ -208,6 +247,9 @@ export class WebLineupStorage implements LineupStoragePort {
       ...point,
       media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role: role ?? 'detail' })),
       trajectory: point.trajectory ?? { vertices: [] },
+      resultSpotId: point.resultSpotId ?? point.id,
+      createdAt: point.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     const mediaRecords: MediaRecord[] = point.media.map((media) => ({
       id: media.id,
@@ -217,6 +259,7 @@ export class WebLineupStorage implements LineupStoragePort {
       mimeType: media.mimeType,
       blob: media.blob,
       role: media.role ?? 'detail',
+      createdAt: media.createdAt ?? new Date().toISOString(),
     }));
 
     await this.transaction(db, [POINTS_STORE, MEDIA_STORE], 'readwrite', (transaction) => {
@@ -272,6 +315,9 @@ export class WebLineupStorage implements LineupStoragePort {
           ...point,
           media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role: role ?? 'detail' })),
           trajectory: point.trajectory ?? { vertices: [] },
+          resultSpotId: point.resultSpotId ?? point.id,
+          createdAt: point.createdAt ?? new Date().toISOString(),
+          updatedAt: point.updatedAt ?? new Date().toISOString(),
         } satisfies PointRecord);
         for (const media of point.media) {
           mediaStore.put({
@@ -282,10 +328,51 @@ export class WebLineupStorage implements LineupStoragePort {
             mimeType: media.mimeType,
             blob: media.blob,
             role: media.role ?? 'detail',
+            createdAt: media.createdAt ?? new Date().toISOString(),
           } satisfies MediaRecord);
         }
       }
     });
+  }
+
+  async loadMediaAssets(): Promise<StoredMedia[]> {
+    if (!this.hasIndexedDb()) {
+      return [];
+    }
+
+    const db = await this.openDb();
+    const pointRecords = await this.getAll<PointRecord>(db, POINTS_STORE);
+    const titleByPointId = new Map(pointRecords.map((point) => [point.id, point.title]));
+    const mediaRecords = await this.getAll<MediaRecord>(db, MEDIA_STORE);
+    const uniqueMedia = new Map<string, MediaRecord>();
+    for (const media of mediaRecords) {
+      if (!uniqueMedia.has(media.id)) {
+        uniqueMedia.set(media.id, media);
+      }
+    }
+
+    return Array.from(uniqueMedia.values())
+      .map((media) => ({
+        id: media.id,
+        name: media.name,
+        type: media.type,
+        mimeType: media.mimeType,
+        blob: media.blob,
+        url: URL.createObjectURL(media.blob),
+        role: 'detail' as const,
+        createdAt: media.createdAt,
+        sourceLineupId: media.pointId,
+        sourceLineupTitle: titleByPointId.get(media.pointId),
+      }))
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  }
+
+  async addMediaAsset(media: StoredMedia): Promise<StoredMedia> {
+    return { ...media, role: 'detail', createdAt: media.createdAt ?? new Date().toISOString() };
+  }
+
+  async attachMediaToLineup(): Promise<void> {
+    return;
   }
 
   async replaceAllMaps(maps: StoredMap[]): Promise<void> {
@@ -301,6 +388,42 @@ export class WebLineupStorage implements LineupStoragePort {
         mapStore.put(this.toMapRecord(map));
       }
     });
+  }
+
+  async loadResultSpotsWithLineups(): Promise<StoredResultSpotWithLineups[]> {
+    return this.pointsToResultSpots(await this.loadPoints());
+  }
+
+  async saveResultSpot(spot: StoredResultSpot): Promise<void> {
+    const points = await this.loadPoints();
+    await Promise.all(points
+      .filter((point) => (point.resultSpotId ?? point.id) === spot.id)
+      .map((point) => this.savePoint({
+        ...point,
+        label: spot.label,
+        mapId: spot.mapId,
+        levelId: spot.levelId,
+        x: spot.x,
+        y: spot.y,
+        grenadeCategoryId: spot.grenadeCategoryId,
+        teamSide: spot.teamSide,
+        updatedAt: new Date().toISOString(),
+      })));
+  }
+
+  async deleteResultSpot(spotId: string): Promise<void> {
+    const points = await this.loadPoints();
+    await Promise.all(points
+      .filter((point) => (point.resultSpotId ?? point.id) === spotId)
+      .map((point) => this.deletePoint(point.id)));
+  }
+
+  saveLineupVariant(lineup: StoredPoint): Promise<void> {
+    return this.savePoint(lineup);
+  }
+
+  deleteLineupVariant(lineupId: string): Promise<void> {
+    return this.deletePoint(lineupId);
   }
 
   async exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
@@ -533,8 +656,32 @@ export class WebLineupStorage implements LineupStoragePort {
     return name.replace(/[^\w.-]+/g, '_');
   }
 
+  private pointsToResultSpots(points: StoredPoint[]): StoredResultSpotWithLineups[] {
+    const groups = new Map<string, StoredPoint[]>();
+    for (const point of points) {
+      const resultSpotId = point.resultSpotId ?? point.id;
+      groups.set(resultSpotId, [...(groups.get(resultSpotId) ?? []), { ...point, resultSpotId }]);
+    }
+
+    return Array.from(groups.entries()).map(([id, lineups]) => {
+      const firstLineup = lineups[0];
+      return {
+        id,
+        label: firstLineup.label,
+        mapId: firstLineup.mapId,
+        levelId: firstLineup.levelId,
+        x: firstLineup.x,
+        y: firstLineup.y,
+        grenadeCategoryId: firstLineup.grenadeCategoryId,
+        teamSide: firstLineup.teamSide,
+        createdAt: firstLineup.createdAt,
+        updatedAt: firstLineup.updatedAt,
+        lineups,
+      };
+    });
+  }
+
   private contentMediaPath(point: StoredPoint, media: StoredMedia): string {
-    const lineupName = this.safeFolderName(point.title || point.label || point.id);
     const role = media.role ?? 'detail';
     return [
       'Content',
@@ -542,8 +689,8 @@ export class WebLineupStorage implements LineupStoragePort {
       this.safeFolderName(point.mapId),
       'User',
       'Media',
-      lineupName,
-      `${role}-${media.id}-${this.safeFileName(media.name)}`,
+      '_Pool',
+      `${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
     ].join('/');
   }
 
@@ -595,11 +742,17 @@ type ContentWorkspaceInfo = {
 type LineupRow = Omit<StoredPoint, 'media' | 'trajectory' | 'requirements'> & {
   requirementsJson: string;
   trajectoryJson: string;
+  resultSpotId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type MediaRow = Omit<StoredMedia, 'blob' | 'url'> & {
   path: string;
   sortOrder: number;
+  createdAt?: string;
+  sourceLineupId?: string;
+  sourceLineupTitle?: string;
 };
 
 type MapRow = Omit<StoredMap, 'imageBlob' | 'imageUrl'> & {
@@ -611,6 +764,7 @@ class DesktopLineupStorage implements LineupStoragePort {
   private dbPromise: Promise<TauriDatabase> | undefined;
   private corePromise: Promise<TauriCore> | undefined;
   private workspacePromise: Promise<ContentWorkspaceInfo> | undefined;
+  private selectedContentRoot: string | undefined;
 
   constructor(private readonly legacyStorage: WebLineupStorage) {}
 
@@ -689,6 +843,7 @@ class DesktopLineupStorage implements LineupStoragePort {
 
     return Promise.all(lineups.map(async (lineup) => ({
       id: lineup.id,
+      resultSpotId: lineup.resultSpotId ?? lineup.id,
       label: lineup.label,
       mapId: lineup.mapId,
       levelId: lineup.levelId,
@@ -712,8 +867,13 @@ class DesktopLineupStorage implements LineupStoragePort {
           blob,
           url: URL.createObjectURL(blob),
           role: media.role ?? 'detail',
+          createdAt: media.createdAt,
+          sourceLineupId: media.lineupId,
+          sourceLineupTitle: lineup.title,
         };
       })),
+      createdAt: lineup.createdAt,
+      updatedAt: lineup.updatedAt,
     } satisfies StoredPoint)));
   }
 
@@ -733,7 +893,7 @@ class DesktopLineupStorage implements LineupStoragePort {
           type=excluded.type,
           mimeType=excluded.mimeType,
           path=excluded.path`,
-        [media.id, media.name, media.type, media.mimeType, path, '', new Date().toISOString()],
+        [media.id, media.name, media.type, media.mimeType, path, '', media.createdAt ?? new Date().toISOString()],
       );
       await db.execute(
         `INSERT INTO lineup_media (lineupId, mediaId, role, sortOrder)
@@ -767,6 +927,102 @@ class DesktopLineupStorage implements LineupStoragePort {
     }
   }
 
+  async loadResultSpotsWithLineups(): Promise<StoredResultSpotWithLineups[]> {
+    return this.pointsToResultSpots(await this.loadPoints());
+  }
+
+  async saveResultSpot(spot: StoredResultSpot): Promise<void> {
+    const points = await this.loadPoints();
+    await Promise.all(points
+      .filter((point) => (point.resultSpotId ?? point.id) === spot.id)
+      .map((point) => this.savePoint({
+        ...point,
+        label: spot.label,
+        mapId: spot.mapId,
+        levelId: spot.levelId,
+        x: spot.x,
+        y: spot.y,
+        grenadeCategoryId: spot.grenadeCategoryId,
+        teamSide: spot.teamSide,
+        updatedAt: new Date().toISOString(),
+      })));
+  }
+
+  async deleteResultSpot(spotId: string): Promise<void> {
+    const points = await this.loadPoints();
+    await Promise.all(points
+      .filter((point) => (point.resultSpotId ?? point.id) === spotId)
+      .map((point) => this.deletePoint(point.id)));
+  }
+
+  saveLineupVariant(lineup: StoredPoint): Promise<void> {
+    return this.savePoint(lineup);
+  }
+
+  deleteLineupVariant(lineupId: string): Promise<void> {
+    return this.deletePoint(lineupId);
+  }
+
+  async loadMediaAssets(): Promise<StoredMedia[]> {
+    const db = await this.db();
+    const workspace = await this.workspace();
+    const rows = await db.select<Array<MediaRow & { sourceLineupTitle?: string }>>(
+      `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType,
+        media_assets.path, media_assets.createdAt, lineup_media.lineupId AS sourceLineupId,
+        lineups.title AS sourceLineupTitle, 'detail' AS role, 0 AS sortOrder
+      FROM media_assets
+      LEFT JOIN lineup_media ON lineup_media.mediaId = media_assets.id
+      LEFT JOIN lineups ON lineups.id = lineup_media.lineupId
+      GROUP BY media_assets.id
+      ORDER BY media_assets.createdAt DESC`,
+    );
+
+    return Promise.all(rows.map(async (media) => {
+      const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+      return {
+        id: media.id,
+        name: media.name,
+        type: media.type,
+        mimeType: media.mimeType,
+        blob,
+        url: URL.createObjectURL(blob),
+        role: 'detail',
+        createdAt: media.createdAt,
+        sourceLineupId: media.sourceLineupId,
+        sourceLineupTitle: media.sourceLineupTitle,
+      } satisfies StoredMedia;
+    }));
+  }
+
+  async addMediaAsset(media: StoredMedia, mapId = 'shared'): Promise<StoredMedia> {
+    const db = await this.db();
+    const workspace = await this.workspace([mapId]);
+    const mediaAsset = { ...media, role: 'detail' as const, createdAt: media.createdAt ?? new Date().toISOString() };
+    const path = this.contentMediaPath({ mapId } as StoredPoint, mediaAsset);
+    await this.writeBlob(workspace.rootDir, path, mediaAsset.blob);
+    await db.execute(
+      `INSERT INTO media_assets (id, name, type, mimeType, path, checksum, createdAt)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT(id) DO UPDATE SET
+        name=excluded.name,
+        type=excluded.type,
+        mimeType=excluded.mimeType,
+        path=excluded.path`,
+      [mediaAsset.id, mediaAsset.name, mediaAsset.type, mediaAsset.mimeType, path, '', mediaAsset.createdAt],
+    );
+    return mediaAsset;
+  }
+
+  async attachMediaToLineup(lineupId: string, media: StoredMedia, role: MediaRole, sortOrder = 0): Promise<void> {
+    const db = await this.db();
+    await db.execute(
+      `INSERT INTO lineup_media (lineupId, mediaId, role, sortOrder)
+      VALUES ($1,$2,$3,$4)
+      ON CONFLICT(lineupId, mediaId) DO UPDATE SET role=excluded.role, sortOrder=excluded.sortOrder`,
+      [lineupId, media.id, role, sortOrder],
+    );
+  }
+
   exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
     return this.zipStorage.exportZip(points, maps);
   }
@@ -782,12 +1038,18 @@ class DesktopLineupStorage implements LineupStoragePort {
   async getMigrationStatus(): Promise<StorageMigrationStatus> {
     try {
       const db = await this.db();
-      const workspace = await this.workspace();
-      const rows = await db.select<Array<{ value: string }>>(
-        'SELECT value FROM app_meta WHERE key = $1',
-        ['legacyMigrationCompleted'],
+      const metaRows = await db.select<Array<{ key: string; value: string }>>(
+        'SELECT key, value FROM app_meta WHERE key IN ($1, $2)',
+        ['legacyMigrationCompleted', 'contentRoot'],
       );
-      const completed = rows[0]?.value === 'true';
+      const meta = new Map(metaRows.map((row) => [row.key, row.value]));
+      const completed = meta.get('legacyMigrationCompleted') === 'true';
+      const storedContentRoot = meta.get('contentRoot')?.trim();
+      if (storedContentRoot) {
+        this.selectedContentRoot = storedContentRoot;
+        this.workspacePromise = undefined;
+      }
+      const workspace = await this.workspace([], storedContentRoot || undefined);
       const [legacyPoints, legacyMaps] = await Promise.all([
         this.legacyStorage.loadPoints(),
         this.legacyStorage.loadMaps(),
@@ -810,25 +1072,37 @@ class DesktopLineupStorage implements LineupStoragePort {
   }
 
   async migrateLegacyData(contentRoot?: string): Promise<void> {
-    this.workspacePromise = undefined;
-    const workspace = await this.workspace(undefined, contentRoot);
-    const [points, maps] = await Promise.all([
-      this.legacyStorage.loadPoints(),
-      this.legacyStorage.loadMaps(),
-    ]);
-    await this.replaceAllMaps(maps);
-    await this.replaceAll(points);
-    const db = await this.db();
-    await db.execute(
-      `INSERT INTO app_meta (key, value) VALUES ($1, $2)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      ['legacyMigrationCompleted', 'true'],
-    );
-    await db.execute(
-      `INSERT INTO app_meta (key, value) VALUES ($1, $2)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      ['contentRoot', workspace.rootDir],
-    );
+    let stage = 'preparing content workspace';
+    try {
+      this.selectedContentRoot = contentRoot?.trim() || undefined;
+      this.workspacePromise = undefined;
+      const workspace = await this.workspace([], this.selectedContentRoot);
+      stage = 'reading legacy IndexedDB data';
+      const [points, maps] = await Promise.all([
+        this.legacyStorage.loadPoints(),
+        this.legacyStorage.loadMaps(),
+      ]);
+      stage = 'writing maps to desktop storage';
+      await this.replaceAllMaps(maps);
+      stage = 'writing lineups and media to desktop storage';
+      await this.replaceAll(points);
+      stage = 'writing migration marker';
+      const db = await this.db();
+      await db.execute(
+        `INSERT INTO app_meta (key, value) VALUES ($1, $2)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+        ['legacyMigrationCompleted', 'true'],
+      );
+      await db.execute(
+        `INSERT INTO app_meta (key, value) VALUES ($1, $2)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+        ['contentRoot', workspace.rootDir],
+      );
+      this.selectedContentRoot = workspace.rootDir;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Desktop migration failed while ${stage}: ${message}`);
+    }
   }
 
   private async db(): Promise<TauriDatabase> {
@@ -841,14 +1115,27 @@ class DesktopLineupStorage implements LineupStoragePort {
   private async loadDatabase(): Promise<TauriDatabase> {
     await this.workspace();
     const Database = await this.loadSql();
-    const db = await Database.load('sqlite:Content/System/cs2nades.sqlite');
+    const db = await Database.load('sqlite:cs2nades-content.sqlite');
     await this.ensureSchema(db);
     return db;
   }
 
   private async ensureSchema(db: TauriDatabase): Promise<void> {
+    await db.execute(`CREATE TABLE IF NOT EXISTS result_spots (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      mapId TEXT NOT NULL,
+      levelId TEXT NOT NULL,
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      grenadeCategoryId TEXT NOT NULL,
+      teamSide TEXT NOT NULL,
+      createdAt TEXT,
+      updatedAt TEXT
+    )`);
     await db.execute(`CREATE TABLE IF NOT EXISTS lineups (
       id TEXT PRIMARY KEY,
+      resultSpotId TEXT,
       label TEXT NOT NULL,
       mapId TEXT NOT NULL,
       levelId TEXT NOT NULL,
@@ -861,8 +1148,13 @@ class DesktopLineupStorage implements LineupStoragePort {
       description TEXT,
       requirementsJson TEXT NOT NULL,
       trajectoryJson TEXT NOT NULL,
-      heroMediaId TEXT
+      heroMediaId TEXT,
+      createdAt TEXT,
+      updatedAt TEXT
     )`);
+    await this.addColumnIfMissing(db, 'lineups', 'resultSpotId TEXT');
+    await this.addColumnIfMissing(db, 'lineups', 'createdAt TEXT');
+    await this.addColumnIfMissing(db, 'lineups', 'updatedAt TEXT');
     await db.execute(`CREATE TABLE IF NOT EXISTS media_assets (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -895,17 +1187,54 @@ class DesktopLineupStorage implements LineupStoragePort {
     await db.execute(
       `INSERT INTO app_meta (key, value) VALUES ($1, $2)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      ['schemaVersion', '1'],
+      ['schemaVersion', '2'],
     );
   }
 
+  private async addColumnIfMissing(db: TauriDatabase, table: string, columnDefinition: string): Promise<void> {
+    try {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${columnDefinition}`);
+    } catch {
+      // SQLite throws when the column already exists; schema upgrades are idempotent.
+    }
+  }
+
   private async upsertLineup(db: TauriDatabase, point: StoredPoint): Promise<void> {
+    const now = new Date().toISOString();
+    const resultSpotId = point.resultSpotId ?? point.id;
+    await db.execute(
+      `INSERT INTO result_spots (
+        id, label, mapId, levelId, x, y, grenadeCategoryId, teamSide, createdAt, updatedAt
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT(id) DO UPDATE SET
+        label=excluded.label,
+        mapId=excluded.mapId,
+        levelId=excluded.levelId,
+        x=excluded.x,
+        y=excluded.y,
+        grenadeCategoryId=excluded.grenadeCategoryId,
+        teamSide=excluded.teamSide,
+        updatedAt=excluded.updatedAt`,
+      [
+        resultSpotId,
+        point.label,
+        point.mapId,
+        point.levelId,
+        point.x,
+        point.y,
+        point.grenadeCategoryId,
+        point.teamSide,
+        point.createdAt ?? now,
+        now,
+      ],
+    );
     await db.execute(
       `INSERT INTO lineups (
-        id, label, mapId, levelId, x, y, kind, grenadeCategoryId, teamSide, title, description,
-        requirementsJson, trajectoryJson, heroMediaId
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        id, resultSpotId, label, mapId, levelId, x, y, kind, grenadeCategoryId, teamSide, title, description,
+        requirementsJson, trajectoryJson, heroMediaId, createdAt, updatedAt
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
       ON CONFLICT(id) DO UPDATE SET
+        resultSpotId=excluded.resultSpotId,
         label=excluded.label,
         mapId=excluded.mapId,
         levelId=excluded.levelId,
@@ -918,9 +1247,11 @@ class DesktopLineupStorage implements LineupStoragePort {
         description=excluded.description,
         requirementsJson=excluded.requirementsJson,
         trajectoryJson=excluded.trajectoryJson,
-        heroMediaId=excluded.heroMediaId`,
+        heroMediaId=excluded.heroMediaId,
+        updatedAt=excluded.updatedAt`,
       [
         point.id,
+        resultSpotId,
         point.label,
         point.mapId,
         point.levelId,
@@ -934,16 +1265,23 @@ class DesktopLineupStorage implements LineupStoragePort {
         JSON.stringify(point.requirements),
         JSON.stringify(point.trajectory ?? { vertices: [] }),
         point.heroMediaId ?? null,
+        point.createdAt ?? now,
+        now,
       ],
     );
   }
 
   private async workspace(mapNames: string[] = [], contentRoot?: string): Promise<ContentWorkspaceInfo> {
-    if (!this.workspacePromise || contentRoot) {
+    const nextContentRoot = contentRoot?.trim() || this.selectedContentRoot;
+    if (contentRoot !== undefined) {
+      this.selectedContentRoot = nextContentRoot;
+    }
+
+    if (!this.workspacePromise || contentRoot !== undefined) {
       const core = await this.core();
       this.workspacePromise = core.invoke<ContentWorkspaceInfo>('ensure_content_workspace', {
         mapNames,
-        contentRoot,
+        contentRoot: nextContentRoot,
       });
     }
     return this.workspacePromise;
@@ -1000,8 +1338,32 @@ class DesktopLineupStorage implements LineupStoragePort {
     return safeName || '_Unknown';
   }
 
+  private pointsToResultSpots(points: StoredPoint[]): StoredResultSpotWithLineups[] {
+    const groups = new Map<string, StoredPoint[]>();
+    for (const point of points) {
+      const resultSpotId = point.resultSpotId ?? point.id;
+      groups.set(resultSpotId, [...(groups.get(resultSpotId) ?? []), { ...point, resultSpotId }]);
+    }
+
+    return Array.from(groups.entries()).map(([id, lineups]) => {
+      const firstLineup = lineups[0];
+      return {
+        id,
+        label: firstLineup.label,
+        mapId: firstLineup.mapId,
+        levelId: firstLineup.levelId,
+        x: firstLineup.x,
+        y: firstLineup.y,
+        grenadeCategoryId: firstLineup.grenadeCategoryId,
+        teamSide: firstLineup.teamSide,
+        createdAt: firstLineup.createdAt,
+        updatedAt: firstLineup.updatedAt,
+        lineups,
+      };
+    });
+  }
+
   private contentMediaPath(point: StoredPoint, media: StoredMedia): string {
-    const lineupName = this.safeFolderName(point.title || point.label || point.id);
     const role = media.role ?? 'detail';
     return [
       'Content',
@@ -1009,8 +1371,8 @@ class DesktopLineupStorage implements LineupStoragePort {
       this.safeFolderName(point.mapId),
       'User',
       'Media',
-      lineupName,
-      `${role}-${media.id}-${this.safeFileName(media.name)}`,
+      '_Pool',
+      `${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
     ].join('/');
   }
 }
@@ -1059,6 +1421,46 @@ export class LineupStorage implements LineupStoragePort {
 
   async importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }> {
     return this.activeStorage().then((storage) => storage.importZipData(file));
+  }
+
+  async loadResultSpotsWithLineups(): Promise<StoredResultSpotWithLineups[]> {
+    const storage = await this.activeStorage();
+    return storage.loadResultSpotsWithLineups?.() ?? [];
+  }
+
+  async saveResultSpot(spot: StoredResultSpot): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.saveResultSpot?.(spot);
+  }
+
+  async deleteResultSpot(spotId: string): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.deleteResultSpot?.(spotId);
+  }
+
+  async saveLineupVariant(lineup: StoredPoint): Promise<void> {
+    const storage = await this.activeStorage();
+    await (storage.saveLineupVariant?.(lineup) ?? storage.savePoint(lineup));
+  }
+
+  async deleteLineupVariant(lineupId: string): Promise<void> {
+    const storage = await this.activeStorage();
+    await (storage.deleteLineupVariant?.(lineupId) ?? storage.deletePoint(lineupId));
+  }
+
+  async loadMediaAssets(): Promise<StoredMedia[]> {
+    const storage = await this.activeStorage();
+    return storage.loadMediaAssets?.() ?? [];
+  }
+
+  async addMediaAsset(media: StoredMedia, mapId?: string): Promise<StoredMedia> {
+    const storage = await this.activeStorage();
+    return storage.addMediaAsset?.(media, mapId) ?? media;
+  }
+
+  async attachMediaToLineup(lineupId: string, media: StoredMedia, role: MediaRole, sortOrder = 0): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.attachMediaToLineup?.(lineupId, media, role, sortOrder);
   }
 
   async getMigrationStatus(): Promise<StorageMigrationStatus> {

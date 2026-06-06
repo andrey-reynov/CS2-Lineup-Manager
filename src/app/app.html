@@ -191,6 +191,15 @@
 
           <p class="settings-category">Data</p>
           <section class="settings-card" aria-label="Import and export data">
+            <div class="settings-path-row">
+              <div class="settings-path-copy">
+                <span>Content folder</span>
+                <strong>{{ desktopContentRoot() || 'Default AppData folder' }}</strong>
+              </div>
+              <button type="button" class="settings-path-button ui-button" (click)="chooseDesktopContentRoot()">
+                Choose
+              </button>
+            </div>
             <div class="settings-action-row">
               <label class="settings-action ui-button">
                 <input type="file" accept=".zip,application/zip" (change)="importZip($event)" />
@@ -201,6 +210,16 @@
                 <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
                 Export ZIP
               </button>
+              <button type="button" class="settings-action ui-button" (click)="exportLegacyZip()">
+                <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
+                Export Legacy Backup
+              </button>
+              @if (showLegacyMigration()) {
+                <button type="button" class="settings-action ui-button" (click)="migrateLegacyDataFromSettings()">
+                  <span class="ui-icon" style="--icon-url: url('/icons/upload_outline.svg')" aria-hidden="true"></span>
+                  Migrate Legacy Data
+                </button>
+              }
             </div>
           </section>
           @if (importError()) {
@@ -274,7 +293,7 @@
                   }
                 }
 
-                @for (point of currentPoints(); track point.id) {
+                @for (point of currentResultPoints(); track resultSpotId(point)) {
                   <button
                     class="map-point"
                     type="button"
@@ -508,6 +527,16 @@
                 >
                   <button type="button" (click)="restartSelectedTrajectory($event)">Add/Edit trajectory</button>
                 </div>
+              } @else if (selectedPoint()?.id === menu.pointId && selectedPoint()?.grenadeCategoryId) {
+                <div
+                  class="trajectory-context-menu"
+                  [style.left.px]="menu.x"
+                  [style.top.px]="menu.y"
+                  (click)="$event.stopPropagation()"
+                >
+                  <button type="button" (click)="editSelectedPoint(); closePointActionMenu()">Edit result spot</button>
+                  <button type="button" (click)="addLineupVariantFromSelected($event)">Add lineup variant</button>
+                </div>
               } @else {
                 <div
                   class="point-action-menu"
@@ -553,6 +582,21 @@
                 <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
               </button>
             </div>
+
+            @if (selectedResultSpotVariants().length > 1) {
+              <div class="lineup-variant-list" aria-label="Lineup variants">
+                @for (variant of selectedResultSpotVariants(); track variant.id; let index = $index) {
+                  <button
+                    type="button"
+                    [class.is-active]="variant.id === point.id"
+                    (click)="selectLineupVariant(variant.id, $event)"
+                  >
+                    <span>{{ displayTitle(variant) }}</span>
+                    <small>{{ startPoint(variant) ? 'Start set' : 'No start' }}</small>
+                  </button>
+                }
+              </div>
+            }
 
             <button
               class="guide-slot"
@@ -622,6 +666,9 @@
               <span class="ui-icon" style="--icon-url: url('/icons/edit_outline.svg')" aria-hidden="true"></span>
               Edit
             </button>
+            <button type="button" class="edit-button is-secondary" (click)="addLineupVariantFromSelected($event)">
+              Add lineup variant
+            </button>
           </aside>
         } @else {
           <aside class="point-details" aria-label="Lineup editor" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
@@ -637,6 +684,21 @@
                 <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
               </button>
             </div>
+
+            @if (selectedResultSpotVariants().length > 1) {
+              <div class="lineup-variant-list" aria-label="Lineup variants">
+                @for (variant of selectedResultSpotVariants(); track variant.id; let index = $index) {
+                  <button
+                    type="button"
+                    [class.is-active]="variant.id === point.id"
+                    (click)="selectLineupVariant(variant.id, $event)"
+                  >
+                    <span>{{ displayTitle(variant) }}</span>
+                    <small>{{ startPoint(variant) ? 'Start set' : 'No start' }}</small>
+                  </button>
+                }
+              </div>
+            }
 
             <label class="field">
               <span>Title</span>
@@ -722,18 +784,12 @@
                     </button>
                   </div>
                 }
-                <label class="media-upload">
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    multiple
-                    (change)="onMediaFilesSelected($event)"
-                  />
+                <button class="media-upload" type="button" (click)="openMediaPool()">
                   <span>
                     <em class="ui-icon" style="--icon-url: url('/icons/add_fill.svg')" aria-hidden="true"></em>
                     <small>Add media</small>
                   </span>
-                </label>
+                </button>
               </div>
             </div>
 
@@ -847,6 +903,43 @@
     </div>
   </section>
 </main>
+
+@if (mediaPoolOpen()) {
+  <div class="media-pool-modal" role="dialog" aria-modal="true" aria-label="Media pool" (click)="closeMediaPool()">
+    <section class="media-pool-panel" (click)="$event.stopPropagation()">
+      <header>
+        <input type="search" placeholder="Search media" disabled />
+        <label class="ui-button is-accent">
+          <input
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            (change)="onMediaFilesSelected($event)"
+          />
+          Upload file
+        </label>
+        <button type="button" aria-label="Close media pool" (click)="closeMediaPool()">
+          <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
+        </button>
+      </header>
+      <div class="media-pool-grid">
+        @for (media of mediaPoolItems(); track media.id) {
+          <button type="button" class="media-pool-item" (click)="attachMediaFromPool(media, $event)">
+            @if (media.type === 'image') {
+              <img [src]="media.url" [alt]="media.name" />
+            } @else {
+              <video [src]="media.url" muted></video>
+            }
+            <span>{{ media.name }}</span>
+            <small>{{ media.sourceLineupTitle || 'Shared media' }}</small>
+          </button>
+        } @empty {
+          <p>No media yet</p>
+        }
+      </div>
+    </section>
+  </div>
+}
 
 @if (previewMedia(); as media) {
   <div class="media-preview" role="dialog" aria-modal="true" (click)="closeMediaPreview()">

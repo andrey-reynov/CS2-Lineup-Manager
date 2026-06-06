@@ -1,12 +1,13 @@
 {
   "name": "cs2nades",
-  "version": "0.1.2",
+  "version": "0.1.6",
   "scripts": {
     "ng": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js",
     "start": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js serve --host 127.0.0.1",
     "build": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js build",
     "watch": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js build --watch --configuration development",
     "test": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js test",
+    "smoke:ui": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js test --watch=false --include src/app/app.smoke.spec.ts",
     "extract:cs2-assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/extract-cs2-assets.ps1",
     "tauri": "tauri",
     "desktop:dev": ".\\scripts\\run-tauri-dev.cmd",
@@ -23,6 +24,7 @@
     "@angular/platform-browser": "^21.2.0",
     "@angular/router": "^21.2.0",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-sql": "^2.4.0",
     "jszip": "^3.10.1",
     "rxjs": "~7.8.0",

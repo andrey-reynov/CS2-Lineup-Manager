@@ -61,14 +61,31 @@ fn read_content_file(content_root: String, relative_path: String) -> Result<Vec<
   fs::read(&path).map_err(|error| format!("Failed to read {}: {error}", path.to_string_lossy()))
 }
 
+#[tauri::command]
+fn save_backup_zip(app: tauri::AppHandle, file_name: String, bytes: Vec<u8>) -> Result<String, String> {
+  let downloads_dir = app
+    .path()
+    .download_dir()
+    .or_else(|_| app.path().app_data_dir())
+    .map_err(|error| format!("Failed to resolve backup folder: {error}"))?;
+  fs::create_dir_all(&downloads_dir)
+    .map_err(|error| format!("Failed to create {}: {error}", downloads_dir.to_string_lossy()))?;
+
+  let path = downloads_dir.join(safe_file_name(&file_name));
+  fs::write(&path, bytes).map_err(|error| format!("Failed to write {}: {error}", path.to_string_lossy()))?;
+  Ok(path_to_string(path))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_sql::Builder::default().build())
     .invoke_handler(tauri::generate_handler![
       ensure_content_workspace,
       write_content_file,
-      read_content_file
+      read_content_file,
+      save_backup_zip
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -130,6 +147,26 @@ fn safe_folder_name(name: &str) -> String {
 
   if trimmed.is_empty() {
     "_Unknown".to_string()
+  } else {
+    trimmed.to_string()
+  }
+}
+
+fn safe_file_name(name: &str) -> String {
+  let safe_name: String = name
+    .chars()
+    .map(|character| {
+      if character.is_ascii_alphanumeric() || character == '-' || character == '_' || character == '.' || character == ' ' {
+        character
+      } else {
+        '_'
+      }
+    })
+    .collect();
+  let trimmed = safe_name.trim();
+
+  if trimmed.is_empty() {
+    "cs2-nades-backup.zip".to_string()
   } else {
     trimmed.to_string()
   }

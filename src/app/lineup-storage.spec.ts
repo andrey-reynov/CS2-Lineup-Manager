@@ -104,12 +104,54 @@ describe('LineupStorage', () => {
     expect(zip.file('Content/README.txt')).toBeTruthy();
     expect(zip.file('Content/Maps/dust2/Meta/map.json')).toBeTruthy();
     expect(lineupsFile).toBeTruthy();
-    expect(zip.file('Content/Maps/dust2/User/Media/Window smoke/start-media-1-start.png')).toBeTruthy();
+    expect(zip.file('Content/Maps/dust2/User/Media/_Pool/start-media-1-start.png')).toBeTruthy();
 
     const lineups = JSON.parse(await lineupsFile!.async('string'));
     expect(lineups.lineups[0].title).toBe('Window smoke');
     expect(lineups.lineups[0].description).toBe('Aim at the top left of the window frame.');
-    expect(lineups.lineups[0].media[0].path).toBe('Content/Maps/dust2/User/Media/Window smoke/start-media-1-start.png');
+    expect(lineups.lineups[0].media[0].path).toBe('Content/Maps/dust2/User/Media/_Pool/start-media-1-start.png');
+  });
+
+  it('should sanitize media ids in user-friendly media file paths', async () => {
+    const storage = new LineupStorage();
+    const point: StoredPoint = {
+      id: 'cache:main:custom:1780749863944',
+      label: '1',
+      mapId: 'cache',
+      levelId: 'main',
+      x: 50,
+      y: 55,
+      kind: 'custom',
+      grenadeCategoryId: 'smoke',
+      teamSide: 'ct',
+      title: 'Connector Smoke',
+      description: '',
+      requirements: [],
+      trajectory: { vertices: [] },
+      media: [
+        {
+          id: 'cache:main:custom:1780749863944:media:1780750657653:image.png',
+          name: 'image.png',
+          type: 'image',
+          mimeType: 'image/png',
+          blob: new Blob(['image-bytes'], { type: 'image/png' }),
+          url: 'blob:test',
+          role: 'start',
+        },
+      ],
+    };
+
+    const zipBlob = await storage.exportZip([point]);
+    const zip = await JSZip.loadAsync(zipBlob);
+    const lineupsFile = zip.file('Content/Maps/cache/Meta/lineups.json');
+    const lineups = JSON.parse(await lineupsFile!.async('string'));
+    const mediaPath = lineups.lineups[0].media[0].path as string;
+
+    expect(mediaPath).toBe(
+      'Content/Maps/cache/User/Media/_Pool/start-cache_main_custom_1780749863944_media_1780750657653_image.png-image.png',
+    );
+    expect(mediaPath.split('/').at(-1)).not.toContain(':');
+    expect(zip.file(mediaPath)).toBeTruthy();
   });
 
   it('should export and import custom maps with radar images', async () => {

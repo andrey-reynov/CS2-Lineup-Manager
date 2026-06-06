@@ -502,6 +502,41 @@ describe('App', () => {
     expect(compiled.textContent).not.toContain('Locations');
   });
 
+  it('should show legacy migration only when desktop storage still needs it', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    (compiled.querySelector('.sidebar-footer .nav-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.textContent).not.toContain('Migrate Legacy Data');
+
+    app.storageMigrationStatus.set({
+      isDesktop: true,
+      needsMigration: true,
+      completed: false,
+      contentRoot: 'C:\\Content',
+      defaultContentRoot: 'C:\\Content',
+    });
+    fixture.detectChanges();
+
+    expect(compiled.textContent).toContain('Migrate Legacy Data');
+
+    app.storageMigrationStatus.set({
+      isDesktop: true,
+      needsMigration: false,
+      completed: true,
+      contentRoot: 'C:\\Content',
+      defaultContentRoot: 'C:\\Content',
+    });
+    fixture.detectChanges();
+
+    expect(compiled.textContent).not.toContain('Migrate Legacy Data');
+  });
+
   it('should create draft spots with right click only and clear them on click away', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
@@ -604,6 +639,56 @@ describe('App', () => {
 
     expect(compiled.querySelector('.point-details-header')?.textContent).toContain('Untitled lineup');
     expect(compiled.querySelector('.point-action-menu')).toBeFalsy();
+  });
+
+  it('should keep one final marker for multiple lineup variants on the same result spot', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const firstPointId = app.selectedPoint().id;
+
+    app.addLineupVariantFromSelected(new MouseEvent('click', { bubbles: true }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelectorAll('.map-point')).toHaveLength(1);
+    expect(app.selectedResultSpotVariants()).toHaveLength(2);
+    expect(app.selectedPoint().id).not.toBe(firstPointId);
+    expect(app.selectedPoint().resultSpotId).toBe(app.selectedResultSpotVariants()[0].resultSpotId);
+    expect(compiled.querySelector('.lineup-variant-list')).toBeTruthy();
+
+    (compiled.querySelector('.lineup-variant-list button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().id).toBe(firstPointId);
+  });
+
+  it('should attach existing shared media from the media pool modal', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const sharedMedia = {
+      id: 'shared-media',
+      name: 'shared.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['shared'], { type: 'image/png' }),
+      url: 'blob:shared',
+      role: 'detail' as const,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      sourceLineupTitle: 'Pool item',
+    };
+
+    app.mediaPoolOpen.set(true);
+    app.mediaPoolAssets.set([sharedMedia]);
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.media-pool-modal')).toBeTruthy();
+    (compiled.querySelector('.media-pool-item') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.mediaPoolOpen()).toBe(false);
+    expect(app.selectedPoint().media.map((media: { id: string }) => media.id)).toContain('shared-media');
+    expect(app.selectedPoint().media[0].role).toBe('detail');
   });
 
   it('should close a readonly selected lineup with Escape', async () => {

@@ -9,6 +9,7 @@ import {
   StoredTrajectory,
   StoredTrajectoryVertex,
   TeamSide,
+  WebLineupStorage,
 } from './lineup-storage';
 
 type TrajectoryVertex = StoredTrajectoryVertex;
@@ -16,6 +17,7 @@ type Trajectory = StoredTrajectory;
 
 type MapPoint = {
   id: string;
+  resultSpotId?: string;
   label: string;
   mapId: string;
   levelId: string;
@@ -30,9 +32,17 @@ type MapPoint = {
   media?: PointMedia[];
   heroMediaId?: string;
   trajectory?: Trajectory;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type PointMedia = StoredMedia;
+
+type ResultSpotGroup = {
+  id: string;
+  representative: MapPoint;
+  variants: MapPoint[];
+};
 
 type MapLevel = {
   id: string;
@@ -140,6 +150,7 @@ type UserSettings = {
   leftPanelWidth: number;
   rightPanelWidth: number;
   resizePanelsTogether: boolean;
+  desktopContentRoot: string;
   accentColorId: AccentColorId;
   teamCtColorId: TeamCtColorId;
   teamTColorId: TeamTColorId;
@@ -294,6 +305,7 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
   leftPanelWidth: 330,
   rightPanelWidth: 330,
   resizePanelsTogether: false,
+  desktopContentRoot: '',
   accentColorId: 'blue',
   teamCtColorId: 'azure',
   teamTColorId: 'orange',
@@ -555,7 +567,10 @@ export class App {
   protected readonly previewMediaId = signal<string | null>(null);
   protected readonly previewZoom = signal(1);
   protected readonly previewPan = signal({ x: 0, y: 0 });
+  protected readonly mediaPoolOpen = signal(false);
+  protected readonly mediaPoolAssets = signal<PointMedia[]>([]);
   protected readonly importError = signal<string | null>(null);
+  protected readonly storageMigrationStatus = signal<StorageMigrationStatus | null>(null);
   protected readonly draggedMediaId = signal<string | null>(null);
   protected readonly selectedMediaId = signal<string | null>(null);
   protected readonly trajectoryEditMode = signal<TrajectoryEditMode | null>(null);
@@ -567,6 +582,11 @@ export class App {
   protected readonly leftPanelWidth = computed(() => this.userSettings().leftPanelWidth);
   protected readonly rightPanelWidth = computed(() => this.userSettings().rightPanelWidth);
   protected readonly resizePanelsTogether = computed(() => this.userSettings().resizePanelsTogether);
+  protected readonly desktopContentRoot = computed(() => this.userSettings().desktopContentRoot);
+  protected readonly showLegacyMigration = computed(() => {
+    const status = this.storageMigrationStatus();
+    return Boolean(status?.isDesktop && status.needsMigration && !status.completed && !status.error);
+  });
   protected readonly selectedAccentColorId = computed(() => this.userSettings().accentColorId);
   protected readonly selectedTeamCtColorId = computed(() => this.userSettings().teamCtColorId);
   protected readonly selectedTeamTColorId = computed(() => this.userSettings().teamTColorId);
@@ -614,6 +634,7 @@ export class App {
   }
 
   private readonly storage = new LineupStorage();
+  private readonly legacyStorage = new WebLineupStorage();
   // Reserved for future user-editable content folders; runtime creation is disabled for now.
   // private readonly contentWorkspaceService = new ContentWorkspaceService();
   private dragState: DragState | null = null;
@@ -654,6 +675,24 @@ export class App {
       )
     ));
   });
+
+  protected readonly currentResultSpotGroups = computed<ResultSpotGroup[]>(() => {
+    const groups = new Map<string, MapPoint[]>();
+    for (const point of this.currentPoints()) {
+      const groupId = this.resultSpotId(point);
+      groups.set(groupId, [...(groups.get(groupId) ?? []), point]);
+    }
+
+    return Array.from(groups.entries()).map(([id, variants]) => {
+      const selectedId = this.selectedPointId();
+      const representative = variants.find((point) => point.id === selectedId) ?? variants[0];
+      return { id, variants, representative };
+    });
+  });
+
+  protected readonly currentResultPoints = computed(() => (
+    this.currentResultSpotGroups().map((group) => group.representative)
+  ));
 
   protected readonly selectedPoint = computed(() => {
     const selectedPointId = this.selectedPointId();
@@ -699,6 +738,36 @@ export class App {
     }
 
     return this.previewGallery().findIndex((media) => media.id === previewMediaId);
+  });
+
+  protected readonly selectedResultSpotVariants = computed(() => {
+    const point = this.selectedPoint();
+    if (!point) {
+      return [];
+    }
+
+    const groupId = this.resultSpotId(point);
+    return (this.addedPoints()[this.currentLevelKey()] ?? [])
+      .filter((variant) => this.resultSpotId(variant) === groupId)
+      .sort((a, b) => (a.createdAt ?? a.id).localeCompare(b.createdAt ?? b.id));
+  });
+
+  protected readonly mediaPoolItems = computed(() => {
+    const assets = new Map<string, PointMedia>();
+    for (const media of this.mediaPoolAssets()) {
+      assets.set(media.id, media);
+    }
+    for (const point of this.allSavedPoints()) {
+      for (const media of point.media ?? []) {
+        assets.set(media.id, {
+          ...media,
+          sourceLineupId: media.sourceLineupId ?? point.id,
+          sourceLineupTitle: media.sourceLineupTitle ?? this.displayTitle(point),
+        });
+      }
+    }
+    return Array.from(assets.values())
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   });
 
   protected readonly selectedTrajectoryPoints = computed(() => {
@@ -849,6 +918,33 @@ export class App {
 
   protected setResizePanelsTogether(resizeTogether: boolean): void {
     this.updateUserSettings({ resizePanelsTogether: resizeTogether });
+  }
+
+  protected async chooseDesktopContentRoot(): Promise<void> {
+    try {
+      const currentPath = this.desktopContentRoot();
+      if ('__TAURI_INTERNALS__' in globalThis) {
+        const dialog = await import('@tauri-apps/plugin-dialog');
+        const selected = await dialog.open({
+          title: 'Choose CS2 Nades content folder',
+          directory: true,
+          multiple: false,
+          defaultPath: currentPath || undefined,
+        });
+        if (typeof selected === 'string' && selected.trim()) {
+          this.updateUserSettings({ desktopContentRoot: selected.trim() });
+          this.importError.set(null);
+        }
+        return;
+      }
+
+      const selected = globalThis.prompt?.('Choose user content folder path', currentPath)?.trim();
+      if (selected !== undefined) {
+        this.updateUserSettings({ desktopContentRoot: selected });
+      }
+    } catch (error) {
+      this.importError.set(error instanceof Error ? error.message : 'Content folder selection failed');
+    }
   }
 
   protected setTeamCtColor(teamCtColorId: TeamCtColorId): void {
@@ -1169,6 +1265,20 @@ export class App {
     this.trajectoryVertexContextMenu.set(null);
   }
 
+  protected resultSpotId(point: MapPoint): string {
+    return point.resultSpotId ?? point.id;
+  }
+
+  protected selectLineupVariant(pointId: string, event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    this.selectedPointId.set(pointId);
+    this.selectedPointMode.set('view');
+    this.cancelTrajectoryInteraction();
+    this.clearObjectSelection();
+    this.updateRailCompactMode();
+  }
+
   private closeFloatingMenus(): void {
     this.closePointActionMenu();
     this.closeMediaContextMenu();
@@ -1193,6 +1303,21 @@ export class App {
       [key]: (points[key] ?? []).filter((point) => point.id !== pointId),
     }));
     void this.storage.deletePoint(pointId);
+    this.closePointEditor();
+  }
+
+  protected deleteResultSpot(point: MapPoint, event: MouseEvent): void {
+    event.stopPropagation();
+    const groupId = this.resultSpotId(point);
+    const key = this.currentLevelKey();
+    const variants = (this.addedPoints()[key] ?? []).filter((item) => this.resultSpotId(item) === groupId);
+    this.addedPoints.update((points) => ({
+      ...points,
+      [key]: (points[key] ?? []).filter((item) => this.resultSpotId(item) !== groupId),
+    }));
+    for (const variant of variants) {
+      void this.storage.deletePoint(variant.id);
+    }
     this.closePointEditor();
   }
 
@@ -1250,9 +1375,48 @@ export class App {
   protected onMediaFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     if (input.files) {
-      this.addMediaFiles(input.files);
+      void this.addMediaFiles(input.files);
     }
     input.value = '';
+  }
+
+  protected async openMediaPool(): Promise<void> {
+    this.mediaPoolOpen.set(true);
+    try {
+      this.mediaPoolAssets.set(await this.storage.loadMediaAssets());
+    } catch {
+      this.mediaPoolAssets.set([]);
+    }
+  }
+
+  protected closeMediaPool(): void {
+    this.mediaPoolOpen.set(false);
+  }
+
+  protected attachMediaFromPool(media: PointMedia, event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const point = this.selectedPoint();
+    if (!point) {
+      return;
+    }
+
+    const currentMedia = point.media ?? [];
+    const detailMedia: PointMedia = {
+      ...media,
+      role: 'detail',
+      sourceLineupId: media.sourceLineupId,
+      sourceLineupTitle: media.sourceLineupTitle,
+    };
+    const nextMedia = currentMedia.some((item) => item.id === detailMedia.id)
+      ? currentMedia
+      : [...currentMedia, detailMedia];
+    this.updateSelectedPoint({
+      media: this.sortRoleMedia(nextMedia),
+      heroMediaId: point.heroMediaId ?? currentMedia[0]?.id ?? detailMedia.id,
+    });
+    void this.storage.attachMediaToLineup(point.id, detailMedia, 'detail', nextMedia.length - 1);
+    this.closeMediaPool();
   }
 
   protected openMediaPreview(media: PointMedia): void {
@@ -1309,6 +1473,51 @@ export class App {
     this.selectedPointMode.set('edit');
   }
 
+  protected addLineupVariantFromSelected(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const base = this.selectedPoint();
+    if (!base?.grenadeCategoryId) {
+      return;
+    }
+
+    const key = this.currentLevelKey();
+    const nextLabel = String((this.markerCounters()[key] ?? 0) + 1);
+    const now = new Date().toISOString();
+    const variant: MapPoint = {
+      ...base,
+      id: `${this.resultSpotId(base)}:variant:${Date.now()}`,
+      resultSpotId: this.resultSpotId(base),
+      label: nextLabel,
+      title: '',
+      description: '',
+      requirements: [],
+      media: [],
+      heroMediaId: undefined,
+      trajectory: { vertices: [] },
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.addedPoints.update((points) => ({
+      ...points,
+      [key]: [...(points[key] ?? []), variant],
+    }));
+    this.markerCounters.update((counters) => ({
+      ...counters,
+      [key]: Number(nextLabel),
+    }));
+    this.selectedPointId.set(variant.id);
+    this.selectedPointMode.set('edit');
+    this.trajectoryEditMode.set('create');
+    this.draftTrajectoryVertex.set({
+      id: this.createTrajectoryVertexId(variant.id),
+      x: variant.x,
+      y: variant.y,
+    });
+    void this.storage.savePoint(this.toStoredPoint(variant));
+    this.closePointActionMenu();
+  }
+
   protected restartSelectedTrajectory(event?: Event): void {
     event?.preventDefault();
     event?.stopPropagation();
@@ -1337,12 +1546,11 @@ export class App {
   }
 
   protected onResultPointContextMenu(point: MapPoint, event: MouseEvent): void {
-    if (this.selectedPointId() !== point.id || this.selectedPointMode() !== 'edit') {
-      return;
-    }
-
     event.preventDefault();
     event.stopPropagation();
+    if (point.grenadeCategoryId && this.selectedPointId() !== point.id) {
+      this.selectLineupVariant(point.id);
+    }
     this.closeFloatingMenus();
     const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
     if (!board) {
@@ -1921,12 +2129,109 @@ export class App {
       this.allSavedPoints().map((point) => this.toStoredPoint(point)),
       this.customStoredMaps(),
     );
+    await this.saveZip(blob, `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`);
+  }
+
+  protected async exportLegacyZip(): Promise<void> {
+    try {
+      const [points, maps] = await Promise.all([
+        this.legacyStorage.loadPoints(),
+        this.legacyStorage.loadMaps(),
+      ]);
+      const blob = await this.legacyStorage.exportZip(points, maps);
+      await this.saveZip(blob, `cs2-nades-legacy-backup-${new Date().toISOString().slice(0, 10)}.zip`);
+      this.importError.set(null);
+    } catch (error) {
+      this.importError.set(error instanceof Error ? error.message : 'Legacy export failed');
+    }
+  }
+
+  protected async migrateLegacyDataFromSettings(): Promise<void> {
+    const getMigrationStatus = this.storage.getMigrationStatus?.bind(this.storage);
+    const migrateLegacyData = this.storage.migrateLegacyData?.bind(this.storage);
+    if (!getMigrationStatus || !migrateLegacyData) {
+      this.importError.set('Desktop migration is not available in this environment');
+      return;
+    }
+
+    try {
+      const status = await getMigrationStatus();
+      if (!status.isDesktop) {
+        this.importError.set('Desktop migration is only available in the desktop app');
+        return;
+      }
+      if (status.error) {
+        throw new Error(status.error);
+      }
+
+      const contentRoot = this.desktopContentRoot().trim() || status.contentRoot || status.defaultContentRoot || '';
+      if (contentRoot && contentRoot !== this.desktopContentRoot()) {
+        this.updateUserSettings({ desktopContentRoot: contentRoot });
+      }
+
+      const [legacyPoints, legacyMaps] = await Promise.all([
+        this.legacyStorage.loadPoints(),
+        this.legacyStorage.loadMaps(),
+      ]);
+      const backup = await this.legacyStorage.exportZip(legacyPoints, legacyMaps);
+      const backupPath = await this.saveZip(backup, `cs2-nades-legacy-backup-${new Date().toISOString().slice(0, 10)}.zip`, {
+        alert: false,
+      });
+
+      await migrateLegacyData(contentRoot || undefined);
+      this.maps.set(DEFAULT_MAPS);
+      await this.loadStoredMaps();
+      await this.loadStoredPoints();
+      await this.refreshDesktopContentRoot();
+      this.importError.set(null);
+      globalThis.alert?.(
+        backupPath
+          ? `Legacy data migrated to desktop storage.\n\nBackup saved:\n${backupPath}`
+          : 'Legacy data migrated to desktop storage. Old browser storage was kept as backup.',
+      );
+    } catch (error) {
+      this.importError.set(error instanceof Error ? error.message : 'Desktop migration failed');
+    }
+  }
+
+  private async saveZip(
+    blob: Blob,
+    fileName: string,
+    options: { alert?: boolean } = {},
+  ): Promise<string | undefined> {
+    if ('__TAURI_INTERNALS__' in globalThis) {
+      return this.saveZipWithTauri(blob, fileName, options);
+    }
+
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`;
+    anchor.download = fileName;
     anchor.click();
     URL.revokeObjectURL(url);
+    return undefined;
+  }
+
+  private async saveZipWithTauri(
+    blob: Blob,
+    fileName: string,
+    options: { alert?: boolean } = {},
+  ): Promise<string> {
+    try {
+      const core = await import('@tauri-apps/api/core');
+      const path = await core.invoke<string>('save_backup_zip', {
+        fileName,
+        bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
+      });
+      if (options.alert !== false) {
+        globalThis.alert?.(`Backup saved:\n${path}`);
+      }
+      this.importError.set(null);
+      return path;
+    } catch (error) {
+      this.importError.set(error instanceof Error ? error.message : 'Backup save failed');
+      throw error;
+    }
   }
 
   protected async importZip(event: Event): Promise<void> {
@@ -1964,7 +2269,7 @@ export class App {
     }
 
     event.preventDefault();
-    this.addMediaFiles(files);
+    void this.addMediaFiles(files);
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -2130,8 +2435,11 @@ export class App {
     const { x, y } = this.getMapPercentFromClientPoint(event.clientX, event.clientY, board);
     const key = this.currentLevelKey();
     const nextPointNumber = (this.markerCounters()[key] ?? 0) + 1;
+    const id = `${key}:custom:${Date.now()}`;
+    const now = new Date().toISOString();
     const point: MapPoint = {
-      id: `${key}:custom:${Date.now()}`,
+      id,
+      resultSpotId: id,
       label: String(nextPointNumber),
       mapId: selectedMap.id,
       levelId: selectedLevel.id,
@@ -2144,6 +2452,8 @@ export class App {
       requirements: [],
       media: [],
       trajectory: { vertices: [] },
+      createdAt: now,
+      updatedAt: now,
     };
 
     this.markerCounters.update((counters) => ({
@@ -2196,7 +2506,7 @@ export class App {
     const position = this.getMapPercentFromClientPoint(event.clientX, event.clientY, board);
     dragState.hasMoved = true;
     if (dragState.target.type === 'result') {
-      this.updateSelectedPoint(position, { save: false });
+      this.updateResultSpotPosition(point, position, false);
       return;
     }
 
@@ -2257,7 +2567,44 @@ export class App {
     }
 
     if (point.grenadeCategoryId) {
-      void this.storage.savePoint(this.toStoredPoint(point));
+      if (dragState.target.type === 'result') {
+        this.saveResultSpotVariants(point);
+      } else {
+        void this.storage.savePoint(this.toStoredPoint(point));
+      }
+    }
+  }
+
+  private updateResultSpotPosition(point: MapPoint, position: Pick<MapPoint, 'x' | 'y'>, save: boolean): void {
+    const groupId = this.resultSpotId(point);
+    const key = this.currentLevelKey();
+    let nextVariants: MapPoint[] = [];
+    this.addedPoints.update((points) => ({
+      ...points,
+      [key]: (points[key] ?? []).map((item) => {
+        if (this.resultSpotId(item) !== groupId) {
+          return item;
+        }
+        const nextItem = { ...item, ...position };
+        nextVariants = [...nextVariants, nextItem];
+        return nextItem;
+      }),
+    }));
+    if (save) {
+      nextVariants.forEach((variant) => {
+        if (variant.grenadeCategoryId) {
+          void this.storage.savePoint(this.toStoredPoint(variant));
+        }
+      });
+    }
+  }
+
+  private saveResultSpotVariants(point: MapPoint): void {
+    const groupId = this.resultSpotId(point);
+    for (const variant of this.addedPoints()[this.currentLevelKey()] ?? []) {
+      if (this.resultSpotId(variant) === groupId && variant.grenadeCategoryId) {
+        void this.storage.savePoint(this.toStoredPoint(variant));
+      }
     }
   }
 
@@ -2364,6 +2711,9 @@ export class App {
         leftPanelWidth: this.clamp(Number(parsedSettings.leftPanelWidth ?? fallbackPanelWidth), PANEL_WIDTH_MIN, PANEL_WIDTH_MAX),
         rightPanelWidth: this.clamp(Number(parsedSettings.rightPanelWidth ?? fallbackPanelWidth), PANEL_WIDTH_MIN, PANEL_WIDTH_MAX),
         resizePanelsTogether: parsedSettings.resizePanelsTogether ?? DEFAULT_USER_SETTINGS.resizePanelsTogether,
+        desktopContentRoot: typeof parsedSettings.desktopContentRoot === 'string'
+          ? parsedSettings.desktopContentRoot
+          : DEFAULT_USER_SETTINGS.desktopContentRoot,
         accentColorId: accentColor?.id ?? DEFAULT_USER_SETTINGS.accentColorId,
         teamCtColorId: teamCtColor?.id ?? DEFAULT_USER_SETTINGS.teamCtColorId,
         teamTColorId: teamTColor?.id ?? DEFAULT_USER_SETTINGS.teamTColorId,
@@ -2455,7 +2805,7 @@ export class App {
     this.mapPan.set({ x: 0, y: 0 });
   }
 
-  private addMediaFiles(files: FileList | File[]): void {
+  private async addMediaFiles(files: FileList | File[]): Promise<void> {
     const point = this.selectedPoint();
     if (!point) {
       return;
@@ -2471,16 +2821,31 @@ export class App {
         blob: file,
         url: URL.createObjectURL(file),
         role: 'detail' as const,
+        createdAt: new Date().toISOString(),
+        sourceLineupId: point.id,
+        sourceLineupTitle: this.displayTitle(point),
       }));
 
     if (media.length === 0) {
       return;
     }
 
+    const storedMedia = await Promise.all(media.map((item) => this.storage.addMediaAsset(item, point.mapId)));
+    this.mediaPoolAssets.update((assets) => {
+      const byId = new Map(assets.map((asset) => [asset.id, asset]));
+      for (const item of storedMedia) {
+        byId.set(item.id, item);
+      }
+      return Array.from(byId.values()).sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+    });
+
     const currentMedia = point.media ?? [];
     this.updateSelectedPoint({
-      media: this.sortRoleMedia([...currentMedia, ...media]),
-      heroMediaId: point.heroMediaId ?? currentMedia[0]?.id ?? media[0]?.id,
+      media: this.sortRoleMedia([...currentMedia, ...storedMedia]),
+      heroMediaId: point.heroMediaId ?? currentMedia[0]?.id ?? storedMedia[0]?.id,
+    });
+    storedMedia.forEach((item, index) => {
+      void this.storage.attachMediaToLineup(point.id, item, 'detail', currentMedia.length + index);
     });
   }
 
@@ -2618,44 +2983,21 @@ export class App {
   }
 
   private async initializeStorage(): Promise<void> {
-    await this.offerDesktopMigration();
+    await this.refreshDesktopContentRoot();
     await this.loadStoredMaps();
     await this.loadStoredPoints();
   }
 
-  private async offerDesktopMigration(): Promise<void> {
-    const getMigrationStatus = this.storage.getMigrationStatus?.bind(this.storage);
-    const migrateLegacyData = this.storage.migrateLegacyData?.bind(this.storage);
-    if (!getMigrationStatus || !migrateLegacyData) {
-      return;
-    }
-
-    const status = await getMigrationStatus();
-    if (!status.isDesktop || !status.needsMigration) {
-      return;
-    }
-
-    const confirmed = globalThis.confirm?.(
-      [
-        'CS2 Nades can move your saved lineups and media to desktop local storage.',
-        '',
-        'Old browser storage will be kept as a backup.',
-        'Move data now?',
-      ].join('\n'),
-    ) ?? false;
-    if (!confirmed) {
-      return;
-    }
-
-    const contentRoot = globalThis.prompt?.(
-      'Choose user content folder path',
-      status.defaultContentRoot ?? status.contentRoot ?? '',
-    )?.trim();
-
+  private async refreshDesktopContentRoot(): Promise<void> {
     try {
-      await migrateLegacyData(contentRoot || undefined);
-    } catch (error) {
-      this.importError.set(error instanceof Error ? error.message : 'Desktop migration failed');
+      const status = await this.storage.getMigrationStatus?.();
+      this.storageMigrationStatus.set(status ?? null);
+      const contentRoot = status?.contentRoot || status?.defaultContentRoot;
+      if (status?.isDesktop && contentRoot && !this.desktopContentRoot()) {
+        this.updateUserSettings({ desktopContentRoot: contentRoot });
+      }
+    } catch {
+      // Storage status is optional; data import/export can still work in web mode.
     }
   }
 
@@ -2705,6 +3047,7 @@ export class App {
   private fromStoredPoint(point: StoredPoint): MapPoint {
     return {
       id: point.id,
+      resultSpotId: point.resultSpotId ?? point.id,
       label: point.label,
       mapId: point.mapId,
       levelId: point.levelId,
@@ -2719,6 +3062,8 @@ export class App {
       media: point.media,
       heroMediaId: point.heroMediaId,
       trajectory: point.trajectory ?? { vertices: [] },
+      createdAt: point.createdAt,
+      updatedAt: point.updatedAt,
     };
   }
 
@@ -2729,6 +3074,7 @@ export class App {
 
     return {
       id: point.id,
+      resultSpotId: this.resultSpotId(point),
       label: point.label,
       mapId: point.mapId,
       levelId: point.levelId,
@@ -2743,6 +3089,8 @@ export class App {
       media: (point.media ?? []).map((media) => ({ ...media, role: media.role ?? 'detail' })),
       heroMediaId: point.heroMediaId,
       trajectory: point.trajectory ?? { vertices: [] },
+      createdAt: point.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
   }
 
