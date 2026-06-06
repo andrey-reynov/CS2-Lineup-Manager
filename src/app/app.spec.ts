@@ -264,6 +264,43 @@ describe('App', () => {
     expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(2);
   });
 
+  it('should keep the bottom rail anchored to the viewport center when panels change', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const rail = compiled.querySelector('.map-bottom-rail') as HTMLElement;
+    expect(getComputedStyle(rail).left).toBe('50%');
+    expect(getComputedStyle(rail).transform).toContain('translateX(-50%)');
+
+    const app = fixture.componentInstance as any;
+    app.selectedPointId.set('manual-point');
+    app.addedPoints.set({
+      'dust2:main': [
+        {
+          id: 'manual-point',
+          label: '1',
+          mapId: 'dust2',
+          levelId: 'main',
+          x: 50,
+          y: 50,
+          kind: 'custom',
+          grenadeCategoryId: 'smoke',
+          teamSide: 'ct',
+          trajectory: { vertices: [] },
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    expect(getComputedStyle(rail).left).toBe('50%');
+    expect(getComputedStyle(rail).transform).toContain('translateX(-50%)');
+  });
+
   it('should update team filter from the compact rail popover', async () => {
     setWindowWidth(560);
     const fixture = TestBed.createComponent(App);

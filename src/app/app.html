@@ -337,7 +337,11 @@
                   (click)="toggleRailPopover('team', $event)"
                 >
                   @if (selectedTeamOption().isAny) {
-                    <span class="rail-icon is-any-team" aria-hidden="true"></span>
+                    <span
+                      class="rail-icon is-local-icon"
+                      aria-hidden="true"
+                      [style.--icon-url]="'url(' + selectedTeamOption().iconUrl + ')'"
+                    ></span>
                   } @else {
                     <span
                       class="rail-icon"
@@ -384,7 +388,11 @@
                             (click)="selectTeamSide(option.id)"
                           >
                             @if (option.isAny) {
-                              <span class="rail-icon is-any-team" aria-hidden="true"></span>
+                              <span
+                                class="rail-icon is-local-icon"
+                                aria-hidden="true"
+                                [style.--icon-url]="'url(' + option.iconUrl + ')'"
+                              ></span>
                             } @else {
                               <span
                                 class="rail-icon"
@@ -426,7 +434,11 @@
                     [class.is-active]="selectedTeamSide() === 'any'"
                     (click)="selectTeamSide('any')"
                   >
-                    <span class="rail-icon is-any-team" aria-hidden="true"></span>
+                    <span
+                      class="rail-icon is-local-icon"
+                      aria-hidden="true"
+                      style="--icon-url: url('/icons/user_fill.svg')"
+                    ></span>
                     <small>Any</small>
                   </button>
                   @for (side of teamSideOptions; track side.id) {

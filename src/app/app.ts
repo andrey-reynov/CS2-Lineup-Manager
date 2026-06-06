@@ -210,7 +210,7 @@ const TEAM_SIDE_OPTIONS: TeamSideOption[] = [
 ];
 
 const TEAM_FILTER_OPTIONS: TeamFilterOption[] = [
-  { id: 'any', label: 'Any', isAny: true },
+  { id: 'any', label: 'Any', iconUrl: '/icons/user_fill.svg', isAny: true },
   ...TEAM_SIDE_OPTIONS,
 ];
 
