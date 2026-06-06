@@ -1,6 +1,6 @@
 {
   "name": "cs2nades",
-  "version": "0.0.0",
+  "version": "0.1.1",
   "scripts": {
     "ng": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js",
     "start": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js serve --host 127.0.0.1",
@@ -10,7 +10,9 @@
     "extract:cs2-assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/extract-cs2-assets.ps1",
     "tauri": "tauri",
     "desktop:dev": ".\\scripts\\run-tauri-dev.cmd",
-    "desktop:build": ".\\scripts\\run-tauri-build.cmd"
+    "desktop:build": ".\\scripts\\run-tauri-build.cmd",
+    "auto:build": ".\\scripts\\auto-build.cmd",
+    "version:bump-dev": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\scripts\\bump-dev-version.mjs"
   },
   "private": true,
   "dependencies": {

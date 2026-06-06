@@ -364,6 +364,24 @@ describe('App', () => {
     expect(compiled.querySelector('.point-details input')).toBeFalsy();
   });
 
+  it('should edit and show lineup description below guide previews', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const textarea = compiled.querySelector('.point-details textarea') as HTMLTextAreaElement;
+
+    textarea.value = 'Stand against the box and aim above the edge.';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().description).toBe('Stand against the box and aim above the edge.');
+
+    (compiled.querySelector('.save-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.lineup-description')?.textContent).toContain('Stand against the box');
+  });
+
   it('should open saved marker clicks in view mode', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
@@ -623,6 +641,87 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect(app.selectedPoint().media.map((item: { id: string }) => item.id)).toEqual(['two']);
+    expect(app.selectedMediaId()).toBeNull();
+  });
+
+  it('should assign selected pool media to guide slots without drag and drop', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'one',
+      name: 'one.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['one'], { type: 'image/png' }),
+      url: 'blob:one',
+      role: 'detail' as const,
+    };
+
+    app.updateSelectedPoint({ media: [media] });
+    fixture.detectChanges();
+
+    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (compiled.querySelector('.guide-role-grid .guide-slot') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().media[0].role).toBe('start');
+    expect(compiled.querySelector('.guide-role-grid .guide-slot img')).toBeTruthy();
+  });
+
+  it('should assign dragged media to guide slots with pointer fallback', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'one',
+      name: 'one.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['one'], { type: 'image/png' }),
+      url: 'blob:one',
+      role: 'detail' as const,
+    };
+
+    app.updateSelectedPoint({ media: [media] });
+    fixture.detectChanges();
+
+    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).dispatchEvent(
+      pointerEvent('pointerdown', { pointerId: 11, clientX: 10, clientY: 10 }),
+    );
+    (compiled.querySelector('.guide-role-grid .guide-slot') as HTMLButtonElement).dispatchEvent(
+      pointerEvent('pointerup', { pointerId: 11, clientX: 10, clientY: 10 }),
+    );
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().media[0].role).toBe('start');
+    expect(app.draggedMediaId()).toBeNull();
+  });
+
+  it('should delete selected media from the media tile action button', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'one',
+      name: 'one.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['one'], { type: 'image/png' }),
+      url: 'blob:one',
+      role: 'detail' as const,
+    };
+
+    app.updateSelectedPoint({ media: [media] });
+    fixture.detectChanges();
+
+    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (compiled.querySelector('.media-role-actions .is-delete') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().media).toEqual([]);
     expect(app.selectedMediaId()).toBeNull();
   });
 

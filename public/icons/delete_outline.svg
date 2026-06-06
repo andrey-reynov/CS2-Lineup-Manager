@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="25px" height="25px" viewBox="0 0 25 25" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>delete_outline</title>
+    <g id="delete_outline" stroke="none" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round" stroke-width="1">
+        <g id="SVGRepo_iconCarrier" transform="translate(2.0833, 1.0417)" stroke="#000000">
+            <line x1="7.8125" y1="10.1851852" x2="7.8125" y2="17.8240741" id="Path" stroke-width="2.5"></line>
+            <line x1="13.0208333" y1="10.1851852" x2="13.0208333" y2="17.8240741" id="Path" stroke-width="2.5"></line>
+            <line x1="0" y1="5.09259259" x2="20.8333333" y2="5.09259259" id="Path" stroke-width="2.5"></line>
+            <path d="M2.60416667,5.09259259 L10.4166667,5.09259259 L18.2291667,5.09259259 L18.2291667,19.0972222 C18.2291667,21.2067014 16.4803385,22.9166667 14.3229167,22.9166667 L6.51041667,22.9166667 C4.3530599,22.9166667 2.60416667,21.2067014 2.60416667,19.0972222 L2.60416667,5.09259259 Z" id="Path" stroke-width="2.5"></path>
+            <path d="M6.51041667,2.5462963 C6.51041667,1.14001505 7.67634115,0 9.11458333,0 L11.71875,0 C13.1570313,0 14.3229167,1.14001505 14.3229167,2.5462963 L14.3229167,5.09259259 L6.51041667,5.09259259 L6.51041667,2.5462963 Z" id="Path" stroke-width="2.5"></path>
+        </g>
+    </g>
+</svg>

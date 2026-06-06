@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="25px" height="25px" viewBox="0 0 25 25" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>doc_banner_outline</title>
+    <g id="doc_banner_outline" stroke="none" fill="none" fill-rule="evenodd">
+        <path d="M2.63157895,9 L22.3684211,9 C23.821802,9 25,10.2536027 25,11.8 L25,13.2 C25,14.7463973 23.821802,16 22.3684211,16 L2.63157895,16 C1.17819803,16 0,14.7463973 0,13.2 L0,11.8 C0,10.2536027 1.17819803,9 2.63157895,9 Z" id="Rectangle" fill="#000000"></path>
+    </g>
+</svg>

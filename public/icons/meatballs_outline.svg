@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="25px" height="25px" viewBox="0 0 25 25" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>meatballs_outline</title>
+    <g id="meatballs_outline" stroke="none" fill="none" fill-rule="evenodd" stroke-width="1">
+        <g id="Group" transform="translate(0, 9.375)" fill="#000000">
+            <path d="M9.375,3.125 C9.375,1.3990625 10.7740625,0 12.5,0 C14.2259375,0 15.625,1.3990625 15.625,3.125 C15.625,4.8509375 14.2259375,6.25 12.5,6.25 C10.7740625,6.25 9.375,4.8509375 9.375,3.125 Z" id="Path"></path>
+            <path d="M0,3.125 C0,1.3990625 1.39910937,0 3.125,0 C4.85089062,0 6.25,1.3990625 6.25,3.125 C6.25,4.8509375 4.85089062,6.25 3.125,6.25 C1.39910937,6.25 0,4.8509375 0,3.125 Z" id="Path"></path>
+            <path d="M18.75,3.125 C18.75,1.3990625 20.1490625,0 21.875,0 C23.6009375,0 25,1.3990625 25,3.125 C25,4.8509375 23.6009375,6.25 21.875,6.25 C20.1490625,6.25 18.75,4.8509375 18.75,3.125 Z" id="Path"></path>
+        </g>
+    </g>
+</svg>

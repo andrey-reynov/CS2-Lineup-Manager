@@ -1,4 +1,4 @@
-import { LineupStorage, StoredPoint } from './lineup-storage';
+import { LineupStorage, StoredMap, StoredPoint } from './lineup-storage';
 import JSZip from 'jszip';
 
 describe('LineupStorage', () => {
@@ -15,6 +15,7 @@ describe('LineupStorage', () => {
       grenadeCategoryId: 'smoke',
       teamSide: 'ct',
       title: 'Window smoke',
+      description: 'Stand on Xbox and aim at the corner.',
       requirements: ['jump', 'left-click'],
       heroMediaId: 'media-2',
       trajectory: {
@@ -50,6 +51,7 @@ describe('LineupStorage', () => {
 
     expect(imported).toHaveLength(1);
     expect(imported[0].title).toBe('Window smoke');
+    expect(imported[0].description).toBe('Stand on Xbox and aim at the corner.');
     expect(imported[0].teamSide).toBe('ct');
     expect(imported[0].heroMediaId).toBe('media-2');
     expect(imported[0].trajectory?.vertices.map((vertex) => vertex.id)).toEqual(['vertex-1', 'vertex-2']);
@@ -71,6 +73,7 @@ describe('LineupStorage', () => {
       grenadeCategoryId: 'smoke',
       teamSide: 'ct',
       title: 'Window smoke',
+      description: 'Aim at the top left of the window frame.',
       requirements: ['jump'],
       trajectory: { vertices: [{ id: 'start', x: 25, y: 30 }] },
       media: [
@@ -97,6 +100,35 @@ describe('LineupStorage', () => {
 
     const lineups = JSON.parse(await lineupsFile!.async('string'));
     expect(lineups.lineups[0].title).toBe('Window smoke');
+    expect(lineups.lineups[0].description).toBe('Aim at the top left of the window frame.');
     expect(lineups.lineups[0].media[0].path).toBe('Content/Maps/dust2/User/Media/Window smoke/start-media-1-start.png');
+  });
+
+  it('should export and import custom maps with radar images', async () => {
+    const storage = new LineupStorage();
+    const map: StoredMap = {
+      id: 'workshop-map',
+      name: 'Workshop Map',
+      location: 'Custom',
+      tags: ['Custom'],
+      levelId: 'main',
+      levelName: 'Main',
+      levelDescription: 'Custom radar image.',
+      imageName: 'radar.png',
+      imageMimeType: 'image/png',
+      imageBlob: new Blob(['radar-bytes'], { type: 'image/png' }),
+      imageUrl: 'blob:radar',
+    };
+
+    const zipBlob = await storage.exportZip([], [map]);
+    const zip = await JSZip.loadAsync(zipBlob);
+
+    expect(zip.file('Content/Maps/workshop-map/Meta/map.json')).toBeTruthy();
+    expect(zip.file('Content/Maps/workshop-map/Meta/radar.png')).toBeTruthy();
+
+    const imported = await storage.importZipData(new File([zipBlob], 'lineups.zip', { type: 'application/zip' }));
+    expect(imported.maps).toHaveLength(1);
+    expect(imported.maps[0].name).toBe('Workshop Map');
+    expect(await imported.maps[0].imageBlob.text()).toBe('radar-bytes');
   });
 });

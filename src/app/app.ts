@@ -3,6 +3,7 @@ import { ContentWorkspace, ContentWorkspaceService } from './content-workspace';
 import {
   GrenadeCategoryId,
   LineupStorage,
+  StoredMap,
   StoredMedia,
   StoredPoint,
   StoredTrajectory,
@@ -24,6 +25,7 @@ type MapPoint = {
   grenadeCategoryId?: GrenadeCategoryId;
   teamSide: TeamSide;
   title?: string;
+  description?: string;
   requirements?: string[];
   media?: PointMedia[];
   heroMediaId?: string;
@@ -478,7 +480,7 @@ const DEFAULT_MAPS: TacticalMap[] = [
   styleUrl: './app.scss'
 })
 export class App {
-  protected readonly maps = DEFAULT_MAPS;
+  protected readonly maps = signal<TacticalMap[]>(DEFAULT_MAPS);
   protected readonly grenadeCategories = GRENADE_CATEGORIES;
   protected readonly teamSideOptions = TEAM_SIDE_OPTIONS;
   protected readonly accentColorOptions = ACCENT_COLOR_OPTIONS;
@@ -572,7 +574,7 @@ export class App {
   private suppressNextBoardClick = false;
 
   protected readonly selectedMap = computed(() => {
-    return this.maps.find((map) => map.id === this.selectedMapId());
+    return this.maps().find((map) => map.id === this.selectedMapId());
   });
 
   protected readonly selectedLevel = computed(() => {
@@ -630,6 +632,16 @@ export class App {
     return this.previewGallery().find((media) => media.id === previewMediaId);
   });
 
+  protected readonly selectedMedia = computed(() => {
+    const selectedMediaId = this.selectedMediaId();
+    const point = this.selectedPoint();
+    if (!selectedMediaId || !point) {
+      return undefined;
+    }
+
+    return (point.media ?? []).find((media) => media.id === selectedMediaId);
+  });
+
   protected readonly previewMediaIndex = computed(() => {
     const previewMediaId = this.previewMediaId();
     if (!previewMediaId) {
@@ -672,6 +684,7 @@ export class App {
   }
 
   constructor() {
+    void this.loadStoredMaps();
     void this.loadStoredPoints();
     void this.ensureContentWorkspace();
   }
@@ -700,6 +713,41 @@ export class App {
     this.selectedMapId.set(null);
     this.closePointEditor();
     this.draftPoint.set(null);
+  }
+
+  protected async onCustomMapSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !file.type.startsWith('image/')) {
+      return;
+    }
+
+    const fallbackName = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Custom map';
+    const name = globalThis.prompt?.('Map name', fallbackName)?.trim() ?? fallbackName;
+    if (!name) {
+      return;
+    }
+
+    const id = this.uniqueMapId(name);
+    const map: StoredMap = {
+      id,
+      name,
+      location: 'Custom',
+      tags: ['Custom'],
+      levelId: 'main',
+      levelName: 'Main',
+      levelDescription: 'Custom radar image.',
+      imageName: file.name,
+      imageMimeType: file.type,
+      imageBlob: file,
+      imageUrl: URL.createObjectURL(file),
+    };
+
+    await this.storage.saveMap(map);
+    this.addStoredMaps([map]);
+    await this.ensureContentWorkspace();
+    this.selectMap(this.toTacticalMap(map));
   }
 
   protected selectLevel(level: MapLevel): void {
@@ -1019,6 +1067,27 @@ export class App {
     this.updateSelectedPoint({ title: value });
   }
 
+  protected updateSelectedPointDescription(value: string): void {
+    this.updateSelectedPoint({ description: value });
+  }
+
+  protected displayDescription(point: MapPoint): string {
+    return point.description?.trim() ?? '';
+  }
+
+  protected updateGuidePreviewFocus(event: MouseEvent): void {
+    const slot = event.currentTarget as HTMLElement;
+    const rect = slot.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    const x = this.clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
+    const y = this.clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100);
+    slot.style.setProperty('--preview-focus-x', `${x}%`);
+    slot.style.setProperty('--preview-focus-y', `${y}%`);
+  }
+
   protected toggleRequirement(requirementId: string, checked: boolean): void {
     const point = this.selectedPoint();
     const current = point?.requirements ?? [];
@@ -1161,10 +1230,34 @@ export class App {
     });
   }
 
+  protected assignSelectedMediaRole(role: 'start' | 'result', event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const media = this.selectedMedia();
+    if (media) {
+      this.assignMediaRole(media.id, role);
+    }
+  }
+
+  protected onGuideRoleSlotClick(role: 'start' | 'result', event: MouseEvent): void {
+    const selectedMedia = this.selectedMedia();
+    if (selectedMedia?.type === 'image') {
+      this.assignSelectedMediaRole(role, event);
+      return;
+    }
+
+    const point = this.selectedPoint();
+    const slotMedia = point ? this.guideSlotMedia(point, role) : undefined;
+    if (slotMedia) {
+      this.openMediaPreview(slotMedia);
+    }
+  }
+
   protected onGuideRoleDragOver(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.dropEffect = 'move';
     }
   }
@@ -1172,17 +1265,31 @@ export class App {
   protected onGuideRoleDrop(role: 'start' | 'result', event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    const mediaId = this.draggedMediaId() ?? event.dataTransfer?.getData('text/plain');
+    const mediaId = this.draggedMediaId()
+      ?? event.dataTransfer?.getData('application/x-cs2nades-media-id')
+      ?? event.dataTransfer?.getData('text/plain');
     this.draggedMediaId.set(null);
     if (mediaId) {
       this.assignMediaRole(mediaId, role);
     }
   }
 
+  protected onGuideRolePointerUp(role: 'start' | 'result', event: PointerEvent): void {
+    if (!this.draggedMediaId()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.assignMediaRole(this.draggedMediaId()!, role);
+    this.draggedMediaId.set(null);
+  }
+
   protected onMediaDragStart(mediaId: string, event: DragEvent): void {
     event.stopPropagation();
     this.selectedMediaId.set(mediaId);
     this.draggedMediaId.set(mediaId);
+    event.dataTransfer?.setData('application/x-cs2nades-media-id', mediaId);
     event.dataTransfer?.setData('text/plain', mediaId);
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move';
@@ -1200,7 +1307,9 @@ export class App {
   protected onMediaDrop(targetMediaId: string, event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    const draggedMediaId = this.draggedMediaId() ?? event.dataTransfer?.getData('text/plain');
+    const draggedMediaId = this.draggedMediaId()
+      ?? event.dataTransfer?.getData('application/x-cs2nades-media-id')
+      ?? event.dataTransfer?.getData('text/plain');
     this.draggedMediaId.set(null);
     if (!draggedMediaId || draggedMediaId === targetMediaId) {
       return;
@@ -1223,6 +1332,15 @@ export class App {
   protected onMediaDragEnd(event: DragEvent): void {
     event.stopPropagation();
     this.draggedMediaId.set(null);
+  }
+
+  protected startMediaPointerDrag(mediaId: string, event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+
+    this.selectedMediaId.set(mediaId);
+    this.draggedMediaId.set(mediaId);
   }
 
   protected selectMedia(media: PointMedia, event: MouseEvent): void {
@@ -1261,6 +1379,12 @@ export class App {
       this.resetPreviewView();
     }
     this.selectedMediaId.set(null);
+  }
+
+  protected deleteSelectedMediaFromButton(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.deleteSelectedMedia();
   }
 
   protected selectPreviewMedia(media: PointMedia, event?: MouseEvent): void {
@@ -1519,7 +1643,10 @@ export class App {
   }
 
   protected async exportZip(): Promise<void> {
-    const blob = await this.storage.exportZip(this.allSavedPoints().map((point) => this.toStoredPoint(point)));
+    const blob = await this.storage.exportZip(
+      this.allSavedPoints().map((point) => this.toStoredPoint(point)),
+      this.customStoredMaps(),
+    );
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -1537,9 +1664,13 @@ export class App {
     }
 
     try {
-      const points = await this.storage.importZip(file);
+      const { maps, points } = await this.storage.importZipData(file);
+      await this.storage.replaceAllMaps(maps);
       await this.storage.replaceAll(points);
+      this.maps.set(DEFAULT_MAPS);
+      this.addStoredMaps(maps);
       this.applyStoredPoints(points);
+      void this.ensureContentWorkspace();
       this.importError.set(null);
     } catch (error) {
       this.importError.set(error instanceof Error ? error.message : 'Import failed');
@@ -1679,6 +1810,7 @@ export class App {
       kind: 'custom',
       teamSide: this.selectedConcreteTeamSide(),
       title: '',
+      description: '',
       requirements: [],
       media: [],
       trajectory: { vertices: [] },
@@ -2081,11 +2213,33 @@ export class App {
     this.applyStoredPoints(points);
   }
 
+  private async loadStoredMaps(): Promise<void> {
+    this.addStoredMaps(await this.storage.loadMaps());
+  }
+
   private async ensureContentWorkspace(): Promise<void> {
-    const workspace = await this.contentWorkspaceService.ensureWorkspace(this.maps.map((map) => map.name));
+    const workspace = await this.contentWorkspaceService.ensureWorkspace(this.maps().map((map) => map.name));
     if (workspace) {
       this.contentWorkspace.set(workspace);
     }
+  }
+
+  private addStoredMaps(maps: StoredMap[]): void {
+    if (maps.length === 0) {
+      return;
+    }
+
+    this.maps.update((currentMaps) => {
+      const defaults = new Set(DEFAULT_MAPS.map((map) => map.id));
+      const customMaps = currentMaps.filter((map) => !defaults.has(map.id));
+      const nextCustomMaps = maps.map((map) => this.toTacticalMap(map));
+      const nextIds = new Set(nextCustomMaps.map((map) => map.id));
+      return [
+        ...DEFAULT_MAPS,
+        ...customMaps.filter((map) => !nextIds.has(map.id)),
+        ...nextCustomMaps,
+      ];
+    });
   }
 
   private applyStoredPoints(points: StoredPoint[]): void {
@@ -2116,6 +2270,7 @@ export class App {
       grenadeCategoryId: point.grenadeCategoryId,
       teamSide: point.teamSide,
       title: point.title,
+      description: point.description ?? '',
       requirements: point.requirements,
       media: point.media,
       heroMediaId: point.heroMediaId,
@@ -2139,11 +2294,67 @@ export class App {
       grenadeCategoryId: point.grenadeCategoryId,
       teamSide: point.teamSide,
       title: point.title ?? '',
+      description: point.description ?? '',
       requirements: point.requirements ?? [],
       media: (point.media ?? []).map((media) => ({ ...media, role: media.role ?? 'detail' })),
       heroMediaId: point.heroMediaId,
       trajectory: point.trajectory ?? { vertices: [] },
     };
+  }
+
+  private customStoredMaps(): StoredMap[] {
+    return this.maps()
+      .filter((map) => !DEFAULT_MAPS.some((defaultMap) => defaultMap.id === map.id))
+      .map((map) => {
+        const storedMap = (map as TacticalMap & { storedMap?: StoredMap }).storedMap;
+        if (storedMap) {
+          return storedMap;
+        }
+
+        throw new Error(`Custom map cannot be exported without stored image data: ${map.name}`);
+      });
+  }
+
+  private toTacticalMap(map: StoredMap): TacticalMap & { storedMap: StoredMap } {
+    return {
+      storedMap: map,
+      id: map.id,
+      name: map.name,
+      location: map.location,
+      tags: map.tags,
+      navBackgroundUrl: map.imageUrl,
+      levels: [
+        {
+          id: map.levelId,
+          name: map.levelName,
+          description: map.levelDescription,
+          imageUrl: map.imageUrl,
+          points: [],
+        },
+      ],
+    };
+  }
+
+  private uniqueMapId(name: string): string {
+    const baseId = this.slugify(name);
+    const existingIds = new Set(this.maps().map((map) => map.id));
+    let id = baseId;
+    let index = 2;
+    while (existingIds.has(id)) {
+      id = `${baseId}-${index}`;
+      index += 1;
+    }
+
+    return id;
+  }
+
+  private slugify(value: string): string {
+    const slug = value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    return slug || `custom-map-${Date.now()}`;
   }
 
   private getMapPercentFromClientPoint(clientX: number, clientY: number, board: HTMLElement): Pick<MapPoint, 'x' | 'y'> {

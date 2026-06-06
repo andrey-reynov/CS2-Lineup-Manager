@@ -88,7 +88,6 @@
   height: 42px;
   color: var(--vscode-text-strong);
   font: inherit;
-  font-weight: 900;
   background: color-mix(in srgb, var(--vscode-side-bar-bg) 88%, transparent);
   border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
@@ -151,6 +150,11 @@
   border-color: var(--vscode-focus-ring);
 }
 
+.sidebar-open-button .ui-icon,
+.sidebar-close-button .ui-icon {
+  --icon-size: 16px;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
@@ -188,6 +192,23 @@ h2 {
   line-height: 1;
 }
 
+.ui-icon {
+  display: block;
+  flex: 0 0 auto;
+  place-self: center;
+  width: var(--icon-size, 16px);
+  height: var(--icon-size, 16px);
+  background: currentColor;
+  mask-image: var(--icon-url);
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-image: var(--icon-url);
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
 .sidebar-footer {
   display: grid;
   gap: 8px;
@@ -205,7 +226,8 @@ h2 {
 .grenade-button,
 .all-filter-button,
 .point-details button,
-.point-details input {
+.point-details input,
+.point-details textarea {
   font: inherit;
   letter-spacing: 0;
 }
@@ -241,9 +263,15 @@ h2 {
 .nav-icon {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   color: var(--vscode-accent);
+}
+
+.nav-icon.ui-icon {
+  --icon-size: 18px;
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
 .map-list {
@@ -468,8 +496,11 @@ h2 {
 }
 
 .add-map-button span {
-  font-size: 1.25rem;
-  line-height: 1;
+  --icon-size: 16px;
+}
+
+.add-map-button input {
+  display: none;
 }
 
 .content {
@@ -522,7 +553,10 @@ h2 {
 }
 
 .settings-action {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   place-items: center;
   min-height: 44px;
   color: var(--vscode-text-strong);
@@ -536,6 +570,10 @@ h2 {
 
 .settings-action input {
   display: none;
+}
+
+.settings-action .ui-icon {
+  --icon-size: 16px;
 }
 
 .settings-toggle,
@@ -1102,6 +1140,11 @@ h2 {
   -webkit-mask-size: contain;
 }
 
+.rail-icon.is-local-icon {
+  mask-image: var(--icon-url);
+  -webkit-mask-image: var(--icon-url);
+}
+
 .rail-icon.is-any-team {
   width: 22px;
   height: 22px;
@@ -1221,13 +1264,20 @@ h2 {
 }
 
 .point-details-header button {
+  display: grid;
+  place-items: center;
   width: 30px;
   height: 30px;
+  padding: 0;
   color: var(--vscode-text);
   background: var(--vscode-control-bg);
   border: 1px solid var(--vscode-border-muted);
   border-radius: 6px;
   cursor: pointer;
+}
+
+.point-details-header button .ui-icon {
+  --icon-size: 15px;
 }
 
 .field {
@@ -1237,6 +1287,9 @@ h2 {
 
 .guide-slot {
   position: relative;
+  --preview-focus-x: 50%;
+  --preview-focus-y: 50%;
+
   display: grid;
   place-items: center;
   width: 100%;
@@ -1290,6 +1343,15 @@ h2 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.point-details.is-view .guide-slot img {
+  transform-origin: var(--preview-focus-x) var(--preview-focus-y);
+  transition: transform 120ms ease;
+}
+
+.point-details.is-view .guide-slot:not(.is-empty):hover img {
+  transform: scale(4);
 }
 
 .guide-throw-overlay {
@@ -1356,7 +1418,23 @@ h2 {
   text-transform: uppercase;
 }
 
+.lineup-description {
+  margin: -2px 0 0;
+  padding: 10px 11px;
+  color: var(--vscode-text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+}
+
 .edit-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 40px;
   margin-top: auto;
   color: var(--vscode-text-strong);
@@ -1368,6 +1446,12 @@ h2 {
   cursor: pointer;
 }
 
+.edit-button .ui-icon,
+.point-actions .save-button .ui-icon,
+.point-actions .delete-button .ui-icon {
+  --icon-size: 16px;
+}
+
 .field > span {
   color: var(--vscode-text-muted);
   font-size: 0.75rem;
@@ -1375,15 +1459,27 @@ h2 {
   text-transform: uppercase;
 }
 
-.field input[type="text"] {
+.field input[type="text"],
+.field textarea {
   width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
   color: var(--vscode-text-strong);
   background: var(--vscode-input-bg);
   border: 1px solid var(--vscode-border);
   border-radius: 8px;
   outline: 0;
+}
+
+.field input[type="text"] {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.field textarea {
+  min-height: 82px;
+  max-height: 180px;
+  padding: 9px 10px;
+  line-height: 1.35;
+  resize: vertical;
 }
 
 .toggle-grid {
@@ -1409,7 +1505,8 @@ h2 {
   min-height: 36px;
   padding: 0 10px;
   color: var(--vscode-text);
-  font-weight: 800;
+  font: inherit;
+  font-weight: 400;
   background: var(--vscode-control-bg);
   border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
@@ -1431,8 +1528,8 @@ h2 {
   display: inline-grid;
   grid-template-columns: 1fr 1fr;
   align-items: start;
-  width: 18px;
-  height: 24px;
+  width: 16px;
+  height: 22px;
   overflow: hidden;
   color: currentColor;
   border: 2px solid currentColor;
@@ -1466,8 +1563,8 @@ h2 {
 }
 
 .toggle-grid img {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   object-fit: contain;
 }
 
@@ -1503,10 +1600,8 @@ h2 {
 }
 
 .media-upload em {
-  font-size: 0.95rem;
-  font-weight: 400;
-  font-style: normal;
-  line-height: 1;
+  width: 20px;
+  height: 20px;
 }
 
 .media-upload small {
@@ -1560,28 +1655,106 @@ h2 {
   cursor: pointer;
 }
 
+.media-role-actions {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  left: 5px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 24px;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.media-role-actions button {
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 4px;
+  overflow: hidden;
+  color: var(--vscode-text);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 88%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.media-role-actions button:hover,
+.media-role-actions button.is-active {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
+}
+
+.media-role-actions button.is-delete:hover {
+  background: var(--vscode-error-hover);
+  border-color: var(--vscode-error);
+}
+
+.media-role-actions button.is-delete .ui-icon {
+  --icon-size: 13px;
+}
+
 .media-grid img,
 .media-grid video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .point-actions {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
   gap: 8px;
   margin-top: auto;
 }
 
+.point-actions button {
+  min-height: 40px;
+  color: var(--vscode-text);
+  background: var(--vscode-control-bg);
+  border-color: var(--vscode-border-muted);
+}
+
 .point-actions .save-button {
-  color: var(--vscode-text-strong);
-  background: var(--vscode-accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
 }
 
 .point-actions .delete-button {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.point-actions .save-button:hover,
+.point-actions .save-button:focus-visible {
+  color: #111318;
+  background: color-mix(in srgb, #ffffff 88%, var(--vscode-accent));
+  border-color: color-mix(in srgb, #ffffff 76%, var(--vscode-focus-ring));
+  outline: 0;
+}
+
+.point-actions .delete-button:hover,
+.point-actions .delete-button:focus-visible {
   color: var(--vscode-text-strong);
-  background: var(--vscode-error-hover);
+  background: color-mix(in srgb, var(--vscode-error-hover) 78%, var(--vscode-control-bg));
+  border-color: var(--vscode-error);
+  outline: 0;
 }
 
 .media-preview {
@@ -1622,11 +1795,17 @@ h2 {
 }
 
 .media-preview-toolbar button {
+  display: grid;
+  place-items: center;
   width: 34px;
   height: 32px;
   padding: 0;
   font: inherit;
-  font-weight: 900;
+}
+
+.media-preview-toolbar .ui-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .media-preview-toolbar span {
@@ -1671,11 +1850,16 @@ h2 {
   position: fixed;
   top: 50%;
   z-index: 2;
+  display: grid;
+  place-items: center;
   width: 48px;
   height: 64px;
-  font-size: 2rem;
-  line-height: 1;
   transform: translateY(-50%);
+}
+
+.media-preview-nav .ui-icon {
+  width: 24px;
+  height: 24px;
 }
 
 .media-preview-nav.is-left {

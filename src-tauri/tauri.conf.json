@@ -1,12 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "CS2 Nades",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.cs2nades.desktop",
   "build": {
     "frontendDist": "../dist/cs2nades/browser",
     "devUrl": "http://127.0.0.1:4200",
-    "beforeDevCommand": ".\\.tools\\node-v24.16.0-win-x64\\npm.cmd run start",
+    "beforeDevCommand": ".\\scripts\\ensure-web-dev.cmd",
     "beforeBuildCommand": ".\\.tools\\node-v24.16.0-win-x64\\npm.cmd run build"
   },
   "app": {

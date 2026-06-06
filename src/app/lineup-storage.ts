@@ -36,15 +36,32 @@ export type StoredPoint = {
   grenadeCategoryId: GrenadeCategoryId;
   teamSide: TeamSide;
   title: string;
+  description?: string;
   requirements: string[];
   media: StoredMedia[];
   heroMediaId?: string;
   trajectory?: StoredTrajectory;
 };
 
+export type StoredMap = {
+  id: string;
+  name: string;
+  location: string;
+  tags: string[];
+  levelId: string;
+  levelName: string;
+  levelDescription: string;
+  imageName: string;
+  imageMimeType: string;
+  imageBlob: Blob;
+  imageUrl: string;
+};
+
 type PointRecord = Omit<StoredPoint, 'media'> & {
   media: Array<Omit<StoredMedia, 'blob' | 'url'>>;
 };
+
+type MapRecord = Omit<StoredMap, 'imageUrl'>;
 
 type MediaRecord = {
   id: string;
@@ -63,6 +80,7 @@ type ExportMedia = Omit<StoredMedia, 'blob' | 'url'> & {
 type ExportManifest = {
   version: 1;
   exportedAt: string;
+  maps?: Array<Omit<StoredMap, 'imageBlob' | 'imageUrl'> & { imageFileName: string }>;
   points: Array<Omit<PointRecord, 'media'> & { media: ExportMedia[] }>;
 };
 
@@ -78,6 +96,7 @@ type ContentLineupMedia = {
 type ContentLineup = {
   id: string;
   title: string;
+  description: string;
   label: string;
   mapId: string;
   levelId: string;
@@ -90,12 +109,37 @@ type ContentLineup = {
 };
 
 const DB_NAME = 'cs2nades-lineups';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const POINTS_STORE = 'points';
 const MEDIA_STORE = 'media';
+const MAPS_STORE = 'maps';
 
 export class LineupStorage {
   private dbPromise: Promise<IDBDatabase> | undefined;
+
+  async loadMaps(): Promise<StoredMap[]> {
+    if (!this.hasIndexedDb()) {
+      return [];
+    }
+
+    const db = await this.openDb();
+    const mapRecords = await this.getAll<MapRecord>(db, MAPS_STORE);
+    return mapRecords.map((map) => ({
+      ...map,
+      imageUrl: URL.createObjectURL(map.imageBlob),
+    }));
+  }
+
+  async saveMap(map: StoredMap): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      return;
+    }
+
+    const db = await this.openDb();
+    await this.transaction(db, [MAPS_STORE], 'readwrite', (transaction) => {
+      transaction.objectStore(MAPS_STORE).put(this.toMapRecord(map));
+    });
+  }
 
   async loadPoints(): Promise<StoredPoint[]> {
     if (!this.hasIndexedDb()) {
@@ -220,12 +264,44 @@ export class LineupStorage {
     });
   }
 
-  async exportZip(points: StoredPoint[]): Promise<Blob> {
+  async replaceAllMaps(maps: StoredMap[]): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      return;
+    }
+
+    const db = await this.openDb();
+    await this.transaction(db, [MAPS_STORE], 'readwrite', (transaction) => {
+      const mapStore = transaction.objectStore(MAPS_STORE);
+      mapStore.clear();
+      for (const map of maps) {
+        mapStore.put(this.toMapRecord(map));
+      }
+    });
+  }
+
+  async exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
     const zip = new JSZip();
     const contentLineups = new Map<string, ContentLineup[]>();
+    const exportMaps = maps.map((map) => {
+      const imageFileName = `Content/Maps/${this.safeFolderName(map.id)}/Meta/${this.safeFileName(map.imageName)}`;
+      zip.file(imageFileName, map.imageBlob);
+      return {
+        id: map.id,
+        name: map.name,
+        location: map.location,
+        tags: map.tags,
+        levelId: map.levelId,
+        levelName: map.levelName,
+        levelDescription: map.levelDescription,
+        imageName: map.imageName,
+        imageMimeType: map.imageMimeType,
+        imageFileName,
+      };
+    });
     const manifest: ExportManifest = {
       version: 1,
       exportedAt: new Date().toISOString(),
+      maps: exportMaps,
       points: points.map((point) => ({
         ...point,
         media: point.media.map((media) => {
@@ -248,6 +324,7 @@ export class LineupStorage {
       mapLineups.push({
         id: point.id,
         title: point.title,
+        description: point.description ?? '',
         label: point.label,
         mapId: point.mapId,
         levelId: point.levelId,
@@ -269,9 +346,30 @@ export class LineupStorage {
     }
 
     zip.file('Content/README.txt', this.contentReadme());
+    for (const map of exportMaps) {
+      const mapDir = `Content/Maps/${this.safeFolderName(map.id)}`;
+      zip.file(`${mapDir}/Meta/map.json`, JSON.stringify({
+        id: map.id,
+        name: map.name,
+        location: map.location,
+        tags: map.tags,
+        levels: [
+          {
+            id: map.levelId,
+            name: map.levelName,
+            description: map.levelDescription,
+            imagePath: map.imageFileName,
+          },
+        ],
+      }, null, 2));
+      zip.folder(`${mapDir}/User/Inbox`);
+      zip.folder(`${mapDir}/User/Media`);
+    }
     for (const [mapId, lineups] of contentLineups) {
       const mapDir = `Content/Maps/${this.safeFolderName(mapId)}`;
-      zip.file(`${mapDir}/Meta/map.json`, JSON.stringify({ id: mapId }, null, 2));
+      if (!exportMaps.some((map) => map.id === mapId)) {
+        zip.file(`${mapDir}/Meta/map.json`, JSON.stringify({ id: mapId }, null, 2));
+      }
       zip.file(`${mapDir}/Meta/lineups.json`, JSON.stringify({ version: 1, mapId, lineups }, null, 2));
       zip.folder(`${mapDir}/User/Inbox`);
     }
@@ -316,6 +414,47 @@ export class LineupStorage {
     })));
   }
 
+  async importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }> {
+    const zip = await JSZip.loadAsync(file);
+    const manifestFile = zip.file('manifest.json');
+    if (!manifestFile) {
+      throw new Error('manifest.json is missing');
+    }
+
+    const manifest = JSON.parse(await manifestFile.async('string')) as ExportManifest;
+    if (manifest.version !== 1 || !Array.isArray(manifest.points)) {
+      throw new Error('Unsupported import file');
+    }
+
+    const maps = await Promise.all((manifest.maps ?? []).map(async (map) => {
+      const imageFile = zip.file(map.imageFileName);
+      if (!imageFile) {
+        throw new Error(`Map image is missing: ${map.imageFileName}`);
+      }
+
+      const importedBlob = await imageFile.async('blob');
+      const imageBlob = new Blob([importedBlob], { type: map.imageMimeType });
+      return {
+        id: map.id,
+        name: map.name,
+        location: map.location,
+        tags: map.tags,
+        levelId: map.levelId,
+        levelName: map.levelName,
+        levelDescription: map.levelDescription,
+        imageName: map.imageName,
+        imageMimeType: map.imageMimeType,
+        imageBlob,
+        imageUrl: URL.createObjectURL(imageBlob),
+      };
+    }));
+
+    return {
+      maps,
+      points: await this.importZip(file),
+    };
+  }
+
   private hasIndexedDb(): boolean {
     return typeof indexedDB !== 'undefined';
   }
@@ -331,6 +470,9 @@ export class LineupStorage {
         if (!db.objectStoreNames.contains(MEDIA_STORE)) {
           const mediaStore = db.createObjectStore(MEDIA_STORE, { keyPath: 'id' });
           mediaStore.createIndex('pointId', 'pointId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains(MAPS_STORE)) {
+          db.createObjectStore(MAPS_STORE, { keyPath: 'id' });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -397,5 +539,11 @@ export class LineupStorage {
       'The root manifest.json is kept for backwards-compatible imports.',
       '',
     ].join('\n');
+  }
+
+  private toMapRecord(map: StoredMap): MapRecord {
+    const { imageUrl, ...record } = map;
+    void imageUrl;
+    return record;
   }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="26" height="25" viewBox="0 0 25 25" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <title>theme_fill</title>
+  <!-- Clean icon: no background rectangle, uses currentColor to inherit theme color -->
+  <path fill="currentColor" d="M12.5,0 C19.4035594,0 25,5.59644063 25,12.5 C25,19.4035594 19.4035594,25 12.5,25 C5.59644063,25 0,19.4035594 0,12.5 C0,5.59644063 5.59644063,0 12.5,0 Z M12.5,4 C7.80557963,4 4,7.80557963 4,12.5 C4,17.1944204 7.80557963,21 12.5,21 L12.5,4 Z"/>
+</svg>

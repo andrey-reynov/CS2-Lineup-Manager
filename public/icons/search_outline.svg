@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="25px" height="25px" viewBox="0 0 25 25" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>search_outline</title>
+    <g id="search_outline" stroke="none" fill="none">
+        <path d="M10.5,-3.55271368e-15 C16.2989899,-3.55271368e-15 21,4.70101013 21,10.5 C21,16.2989899 16.2989899,21 10.5,21 C4.70101013,21 -3.55271368e-15,16.2989899 -3.55271368e-15,10.5 C-3.55271368e-15,4.70101013 4.70101013,-3.55271368e-15 10.5,-3.55271368e-15 Z M10.5,3 C6.35786438,3 3,6.35786438 3,10.5 C3,14.6421356 6.35786438,18 10.5,18 C14.6421356,18 18,14.6421356 18,10.5 C18,6.35786438 14.6421356,3 10.5,3 Z" id="Combined-Shape" fill="#000000" fill-rule="nonzero"></path>
+        <line x1="23.5" y1="23.5" x2="17.359345" y2="17.359345" id="Vector-109" stroke="#000000" stroke-width="3" stroke-linecap="round" fill-rule="nonzero"></line>
+        <path d="M5.99355211,9.05303431 C5.99355211,7.34359598 7.37932568,5.9578224 9.08876402,5.9578224 L9.17058711,5.9578224 L9.17058711,5.9578224" id="Path" stroke="#000000" stroke-width="2" stroke-linecap="round"></path>
+    </g>
+</svg>
