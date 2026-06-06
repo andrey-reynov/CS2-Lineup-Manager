@@ -725,6 +725,12 @@ h2 {
   border: 1px solid var(--vscode-border-muted);
   border-radius: 8px;
   cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
 .settings-team-colors {
@@ -770,6 +776,8 @@ h2 {
   color: var(--vscode-text-strong);
   background: var(--vscode-accent-soft);
   border-color: var(--vscode-focus-ring);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--vscode-accent) 18%, transparent);
+  transform: translateY(-1px);
 }
 
 .settings-error {
@@ -1322,6 +1330,10 @@ h2 {
   gap: 6px;
 }
 
+.point-action-grid.is-single {
+  grid-template-columns: 1fr;
+}
+
 .point-action-menu button {
   display: grid;
   place-items: center;
@@ -1788,53 +1800,6 @@ h2 {
   cursor: pointer;
 }
 
-.media-role-actions {
-  position: absolute;
-  right: 5px;
-  bottom: 5px;
-  left: 5px;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 24px;
-  gap: 4px;
-  pointer-events: auto;
-}
-
-.media-role-actions button {
-  min-width: 0;
-  min-height: 24px;
-  padding: 0 4px;
-  overflow: hidden;
-  color: var(--vscode-text);
-  font: inherit;
-  font-size: 0.68rem;
-  font-weight: 400;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: color-mix(in srgb, var(--vscode-overlay-bg) 88%, transparent);
-  border: 1px solid var(--vscode-border-muted);
-  border-radius: 6px;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-}
-
-.media-role-actions button:hover,
-.media-role-actions button.is-active {
-  color: var(--vscode-text-strong);
-  background: var(--vscode-accent);
-  border-color: var(--vscode-focus-ring);
-}
-
-.media-role-actions button.is-delete:hover {
-  background: var(--vscode-error-hover);
-  border-color: var(--vscode-error);
-}
-
-.media-role-actions button.is-delete .ui-icon {
-  --icon-size: 13px;
-}
-
 .media-grid img,
 .media-grid video {
   display: block;
@@ -1843,6 +1808,47 @@ h2 {
   object-fit: cover;
   user-select: none;
   -webkit-user-drag: none;
+}
+
+.media-context-menu,
+.trajectory-context-menu {
+  position: absolute;
+  z-index: 12;
+  display: grid;
+  gap: 6px;
+  width: 138px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 90%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px var(--vscode-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.media-context-menu button,
+.trajectory-context-menu button {
+  min-height: 30px;
+  color: var(--vscode-text);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 400;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.media-context-menu button:hover,
+.trajectory-context-menu button:hover {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
+}
+
+.media-context-menu button.is-delete:hover,
+.trajectory-context-menu button.is-delete:hover {
+  background: var(--vscode-error-hover);
+  border-color: var(--vscode-error);
 }
 
 .point-actions {
@@ -1898,29 +1904,13 @@ h2 {
   inset: 0;
   z-index: 20;
   display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 16px;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 10px;
   place-items: center;
-  padding: 70px 80px 24px;
+  padding: 32px 80px 24px;
   background: rgba(3, 3, 4, 0.96);
 }
 
-.media-preview-toolbar {
-  position: fixed;
-  top: 18px;
-  right: 18px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px;
-  color: var(--vscode-text-strong);
-  background: rgba(20, 20, 22, 0.92);
-  border: 1px solid var(--vscode-border);
-  border-radius: 8px;
-}
-
-.media-preview-toolbar button,
 .media-preview-nav,
 .media-preview-gallery button {
   color: var(--vscode-text-strong);
@@ -1928,28 +1918,6 @@ h2 {
   border: 1px solid var(--vscode-border);
   border-radius: 8px;
   cursor: pointer;
-}
-
-.media-preview-toolbar button {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 32px;
-  padding: 0;
-  font: inherit;
-}
-
-.media-preview-toolbar .ui-icon {
-  width: 16px;
-  height: 16px;
-}
-
-.media-preview-toolbar span {
-  min-width: 54px;
-  color: var(--vscode-text);
-  font-size: 0.78rem;
-  font-weight: 800;
-  text-align: center;
 }
 
 .media-preview-stage {
@@ -1980,6 +1948,17 @@ h2 {
   will-change: transform;
   user-select: none;
   -webkit-user-drag: none;
+}
+
+.media-preview-hint {
+  margin: 0;
+  color: var(--vscode-text-subtle);
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  pointer-events: none;
+  user-select: none;
 }
 
 .media-preview-nav {

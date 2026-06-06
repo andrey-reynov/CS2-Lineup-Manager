@@ -1,5 +1,4 @@
 import { Component, HostBinding, HostListener, computed, signal } from '@angular/core';
-import { ContentWorkspace, ContentWorkspaceService } from './content-workspace';
 import {
   GrenadeCategoryId,
   LineupStorage,
@@ -96,6 +95,19 @@ type PointActionMenu = {
   pointId: string;
   x: number;
   y: number;
+};
+
+type MediaContextMenu = {
+  mediaId: string;
+  x: number;
+  y: number;
+};
+
+type TrajectoryVertexContextMenu = {
+  vertexId: string;
+  x: number;
+  y: number;
+  isLast: boolean;
 };
 
 type AppView = 'home' | 'map' | 'settings';
@@ -537,11 +549,12 @@ export class App {
   protected readonly selectedPointId = signal<string | null>(null);
   protected readonly selectedPointMode = signal<PointMode>('view');
   protected readonly pointActionMenu = signal<PointActionMenu | null>(null);
+  protected readonly mediaContextMenu = signal<MediaContextMenu | null>(null);
+  protected readonly trajectoryVertexContextMenu = signal<TrajectoryVertexContextMenu | null>(null);
   protected readonly previewMediaId = signal<string | null>(null);
   protected readonly previewZoom = signal(1);
   protected readonly previewPan = signal({ x: 0, y: 0 });
   protected readonly importError = signal<string | null>(null);
-  protected readonly contentWorkspace = signal<ContentWorkspace | undefined>(undefined);
   protected readonly draggedMediaId = signal<string | null>(null);
   protected readonly selectedMediaId = signal<string | null>(null);
   protected readonly trajectoryEditMode = signal<TrajectoryEditMode | null>(null);
@@ -600,7 +613,8 @@ export class App {
   }
 
   private readonly storage = new LineupStorage();
-  private readonly contentWorkspaceService = new ContentWorkspaceService();
+  // Reserved for future user-editable content folders; runtime creation is disabled for now.
+  // private readonly contentWorkspaceService = new ContentWorkspaceService();
   private dragState: DragState | null = null;
   private trajectoryDragState: TrajectoryDragState | null = null;
   private previewPanState: PreviewPanState | null = null;
@@ -626,10 +640,11 @@ export class App {
       return [];
     }
 
+    const draftPoint = this.selectedPointMode() === 'edit' ? null : this.draftPoint();
     return [
       ...this.selectedLevel()!.points,
       ...(this.addedPoints()[this.currentLevelKey()] ?? []),
-      ...(this.draftPoint() ? [this.draftPoint()!] : []),
+      ...(draftPoint ? [draftPoint] : []),
     ].filter((point) => (
       !point.grenadeCategoryId ||
       (
@@ -720,7 +735,8 @@ export class App {
   constructor() {
     void this.loadStoredMaps();
     void this.loadStoredPoints();
-    void this.ensureContentWorkspace();
+    // Content workspace folders are intentionally disabled until the feature is used by the UI.
+    // void this.ensureContentWorkspace();
   }
 
   protected selectMap(map: TacticalMap): void {
@@ -786,7 +802,8 @@ export class App {
 
     await this.storage.saveMap(map);
     this.addStoredMaps([map]);
-    await this.ensureContentWorkspace();
+    // Content workspace folders are intentionally disabled until the feature is used by the UI.
+    // await this.ensureContentWorkspace();
     this.selectMap(this.toTacticalMap(map));
   }
 
@@ -941,6 +958,7 @@ export class App {
       target.closest('.trajectory-midpoint') ||
       target.closest('.point-details') ||
       target.closest('.point-action-menu') ||
+      target.closest('.trajectory-context-menu') ||
       target.closest('.level-switcher') ||
       target.closest('.map-bottom-rail')
     ) {
@@ -1028,17 +1046,18 @@ export class App {
     this.closePointEditor();
   }
 
-  protected onBoardDoubleClick(event: MouseEvent): void {
-    this.createPointFromBoardAction(event);
-  }
-
   protected onBoardContextMenu(event: MouseEvent): void {
     event.preventDefault();
     this.createPointFromBoardAction(event);
   }
 
   private createPointFromBoardAction(event: MouseEvent): void {
-    if (!this.selectedMap() || !this.selectedLevel() || this.trajectoryEditMode()) {
+    if (
+      !this.selectedMap() ||
+      !this.selectedLevel() ||
+      this.trajectoryEditMode() ||
+      this.selectedPointMode() === 'edit'
+    ) {
       return;
     }
 
@@ -1046,7 +1065,7 @@ export class App {
       return;
     }
 
-    this.closePointActionMenu();
+    this.closeFloatingMenus();
     const point = this.addPointFromBoardEvent(event, event.currentTarget as HTMLElement);
     if (!point) {
       return;
@@ -1092,11 +1111,13 @@ export class App {
       return;
     }
 
+    this.clearObjectSelection();
     if (this.selectedPointId() === point.id && this.selectedPointMode() === 'edit') {
       return;
     }
 
     if (point.grenadeCategoryId) {
+      this.draftPoint.set(null);
       this.selectedPointId.set(point.id);
       this.selectedPointMode.set('view');
       this.trajectoryEditMode.set(null);
@@ -1115,6 +1136,7 @@ export class App {
     const rect = board.getBoundingClientRect();
     const position = this.getPointActionMenuPosition(event.clientX - rect.left, event.clientY - rect.top, rect);
     this.selectedPointId.set(null);
+    this.closeFloatingMenus();
     this.pointActionMenu.set({
       pointId: point.id,
       x: position.x,
@@ -1131,11 +1153,38 @@ export class App {
     this.resetPreviewView();
     this.draggedMediaId.set(null);
     this.selectedMediaId.set(null);
+    this.draftPoint.set(null);
+    this.closeMediaContextMenu();
+    this.closeTrajectoryVertexContextMenu();
     this.updateRailCompactMode();
   }
 
   protected closePointActionMenu(): void {
     this.pointActionMenu.set(null);
+  }
+
+  protected closeMediaContextMenu(): void {
+    this.mediaContextMenu.set(null);
+  }
+
+  protected closeTrajectoryVertexContextMenu(): void {
+    this.trajectoryVertexContextMenu.set(null);
+  }
+
+  private closeFloatingMenus(): void {
+    this.closePointActionMenu();
+    this.closeMediaContextMenu();
+    this.closeTrajectoryVertexContextMenu();
+  }
+
+  private setActiveMediaSelection(mediaId: string): void {
+    this.selectedTrajectoryVertexId.set(null);
+    this.selectedMediaId.set(mediaId);
+  }
+
+  private setActiveTrajectoryVertexSelection(vertexId: string): void {
+    this.selectedMediaId.set(null);
+    this.selectedTrajectoryVertexId.set(vertexId);
   }
 
   protected deleteMarker(pointId: string, event: MouseEvent): void {
@@ -1229,6 +1278,7 @@ export class App {
       this.selectedPointMode.set('view');
       this.trajectoryEditMode.set(null);
       this.selectedTrajectoryVertexId.set(null);
+      this.draftTrajectoryVertex.set(null);
     }
   }
 
@@ -1259,6 +1309,55 @@ export class App {
 
   protected editSelectedPoint(): void {
     this.selectedPointMode.set('edit');
+  }
+
+  protected restartSelectedTrajectory(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const point = this.selectedPoint();
+    if (!point || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    this.trajectoryDragState = null;
+    this.selectedTrajectoryVertexId.set(null);
+    this.trajectoryEditMode.set('create');
+    this.draftTrajectoryVertex.set({
+      id: this.createTrajectoryVertexId(point.id),
+      x: point.x,
+      y: point.y,
+    });
+    this.closePointActionMenu();
+  }
+
+  protected onResultPointDoubleClick(point: MapPoint, event: MouseEvent): void {
+    if (this.selectedPointId() !== point.id || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    this.restartSelectedTrajectory(event);
+  }
+
+  protected onResultPointContextMenu(point: MapPoint, event: MouseEvent): void {
+    if (this.selectedPointId() !== point.id || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.closeFloatingMenus();
+    const board = (event.currentTarget as HTMLElement).closest('.map-board') as HTMLElement | null;
+    if (!board) {
+      return;
+    }
+
+    const rect = board.getBoundingClientRect();
+    const position = this.getPointActionMenuPosition(event.clientX - rect.left, event.clientY - rect.top, rect);
+    this.pointActionMenu.set({
+      pointId: point.id,
+      x: position.x,
+      y: position.y,
+    });
   }
 
   protected displayTitle(point: MapPoint): string {
@@ -1340,6 +1439,41 @@ export class App {
     }
   }
 
+  protected openMediaContextMenu(media: PointMedia, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.setActiveMediaSelection(media.id);
+    this.closePointActionMenu();
+    this.closeTrajectoryVertexContextMenu();
+    const board = (event.currentTarget as HTMLElement).closest('.map-stage') as HTMLElement | null;
+    const rect = board?.getBoundingClientRect();
+    this.mediaContextMenu.set({
+      mediaId: media.id,
+      x: rect ? event.clientX - rect.left : event.clientX,
+      y: rect ? event.clientY - rect.top : event.clientY,
+    });
+  }
+
+  protected mediaContextMenuItem(): PointMedia | undefined {
+    const menu = this.mediaContextMenu();
+    const point = this.selectedPoint();
+    if (!menu || !point) {
+      return undefined;
+    }
+
+    return (point.media ?? []).find((media) => media.id === menu.mediaId);
+  }
+
+  protected assignContextMediaRole(role: 'start' | 'result', event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const media = this.mediaContextMenuItem();
+    if (media) {
+      this.assignMediaRole(media.id, role);
+    }
+    this.closeMediaContextMenu();
+  }
+
   protected onGuideRoleDragOver(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
@@ -1374,8 +1508,9 @@ export class App {
 
   protected onMediaDragStart(mediaId: string, event: DragEvent): void {
     event.stopPropagation();
-    this.selectedMediaId.set(mediaId);
+    this.setActiveMediaSelection(mediaId);
     this.draggedMediaId.set(mediaId);
+    this.closeMediaContextMenu();
     event.dataTransfer?.setData('application/x-cs2nades-media-id', mediaId);
     event.dataTransfer?.setData('text/plain', mediaId);
     if (event.dataTransfer) {
@@ -1426,7 +1561,7 @@ export class App {
       return;
     }
 
-    this.selectedMediaId.set(mediaId);
+    this.setActiveMediaSelection(mediaId);
     this.draggedMediaId.set(mediaId);
   }
 
@@ -1436,12 +1571,13 @@ export class App {
       return;
     }
 
-    this.selectedMediaId.set(media.id);
+    this.setActiveMediaSelection(media.id);
+    this.closeMediaContextMenu();
   }
 
   protected openMediaPreviewFromEdit(media: PointMedia, event: MouseEvent): void {
     event.stopPropagation();
-    this.selectedMediaId.set(media.id);
+    this.setActiveMediaSelection(media.id);
     this.openMediaPreview(media);
   }
 
@@ -1468,10 +1604,15 @@ export class App {
     this.selectedMediaId.set(null);
   }
 
-  protected deleteSelectedMediaFromButton(event: Event): void {
+  protected deleteContextMedia(event: Event): void {
     event.preventDefault();
     event.stopPropagation();
-    this.deleteSelectedMedia();
+    const media = this.mediaContextMenuItem();
+    if (media) {
+      this.setActiveMediaSelection(media.id);
+      this.deleteSelectedMedia();
+    }
+    this.closeMediaContextMenu();
   }
 
   protected selectPreviewMedia(media: PointMedia, event?: MouseEvent): void {
@@ -1569,6 +1710,7 @@ export class App {
 
     event.preventDefault();
     event.stopPropagation();
+    this.clearObjectSelection();
     this.beginTrajectoryDrag(event, { type: 'result', pointId: point.id });
   }
 
@@ -1580,7 +1722,8 @@ export class App {
 
     event.preventDefault();
     event.stopPropagation();
-    this.selectedTrajectoryVertexId.set(vertexId);
+    this.setActiveTrajectoryVertexSelection(vertexId);
+    this.closeTrajectoryVertexContextMenu();
     this.beginTrajectoryDrag(event, { type: 'vertex', pointId: point.id, vertexId });
   }
 
@@ -1599,15 +1742,61 @@ export class App {
 
     const vertices = point.trajectory?.vertices ?? [];
     if (vertices.at(-1)?.id !== vertexId) {
-      this.selectedTrajectoryVertexId.set(vertexId);
+      this.setActiveTrajectoryVertexSelection(vertexId);
       return;
     }
 
+    this.setActiveTrajectoryVertexSelection(vertexId);
     this.trajectoryEditMode.set('edit');
     const source = vertices.find((vertex) => vertex.id === vertexId);
     if (source) {
       this.addTrajectoryVertex(point, { x: source.x, y: source.y });
     }
+  }
+
+  protected openTrajectoryVertexContextMenu(vertexId: string, isLast: boolean, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    this.setActiveTrajectoryVertexSelection(vertexId);
+    this.closePointActionMenu();
+    this.closeMediaContextMenu();
+    const stage = (event.currentTarget as HTMLElement).closest('.map-stage') as HTMLElement | null;
+    const rect = stage?.getBoundingClientRect();
+    this.trajectoryVertexContextMenu.set({
+      vertexId,
+      isLast,
+      x: rect ? event.clientX - rect.left : event.clientX,
+      y: rect ? event.clientY - rect.top : event.clientY,
+    });
+  }
+
+  protected continueTrajectoryFromContext(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const menu = this.trajectoryVertexContextMenu();
+    if (!menu?.isLast) {
+      return;
+    }
+
+    this.startTrajectoryContinuation(menu.vertexId);
+    this.closeTrajectoryVertexContextMenu();
+  }
+
+  protected deleteTrajectoryVertexFromContext(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const menu = this.trajectoryVertexContextMenu();
+    if (!menu) {
+      return;
+    }
+
+    this.setActiveTrajectoryVertexSelection(menu.vertexId);
+    this.deleteSelectedTrajectoryVertex();
+    this.closeTrajectoryVertexContextMenu();
   }
 
   protected insertTrajectoryVertexAfter(index: number, event: MouseEvent): void {
@@ -1657,7 +1846,7 @@ export class App {
     const vertices = [...(point.trajectory?.vertices ?? [])];
     vertices.splice(index, 0, vertex);
     this.updateSelectedPoint({ trajectory: { vertices } });
-    this.selectedTrajectoryVertexId.set(vertex.id);
+    this.setActiveTrajectoryVertexSelection(vertex.id);
     this.trajectoryEditMode.set('edit');
     return vertex;
   }
@@ -1757,7 +1946,8 @@ export class App {
       this.maps.set(DEFAULT_MAPS);
       this.addStoredMaps(maps);
       this.applyStoredPoints(points);
-      void this.ensureContentWorkspace();
+      // Content workspace folders are intentionally disabled until the feature is used by the UI.
+      // void this.ensureContentWorkspace();
       this.importError.set(null);
     } catch (error) {
       this.importError.set(error instanceof Error ? error.message : 'Import failed');
@@ -1808,33 +1998,54 @@ export class App {
     }
 
     if (event.key === 'Escape') {
+      if (this.selectedPoint() && this.selectedPointMode() === 'view') {
+        event.preventDefault();
+        this.closePointEditor();
+        return;
+      }
+
       if (this.trajectoryEditMode() || this.trajectoryDragState || this.draftTrajectoryVertex()) {
         event.preventDefault();
         this.cancelTrajectoryInteraction();
+        return;
       }
       return;
     }
 
-    if (event.key === 'Enter' && this.trajectoryEditMode()) {
+    if (event.key === 'Enter' && this.trajectoryEditMode() && !this.isTextEditingActive(event.target)) {
       event.preventDefault();
       this.commitTrajectoryInteraction();
       return;
     }
 
-    if (
-      !this.previewMedia() &&
-      (event.key === 'Delete' || event.key === 'Backspace') &&
-      this.selectedPointMode() === 'edit' &&
-      this.selectedMediaId()
-    ) {
-      event.preventDefault();
-      this.deleteSelectedMedia();
-      return;
-    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !this.isTextEditingActive(event.target)) {
+      const selectedTrajectoryVertexId = this.selectedTrajectoryVertexId();
+      const selectedMediaId = this.selectedMediaId();
+      if (selectedTrajectoryVertexId && selectedMediaId) {
+        return;
+      }
 
-    if ((event.key === 'Delete' || event.key === 'Backspace') && this.selectedTrajectoryVertexId()) {
-      event.preventDefault();
-      this.deleteSelectedTrajectoryVertex();
+      if (
+        this.selectedPointMode() === 'edit' &&
+        selectedTrajectoryVertexId &&
+        !this.trajectoryDragState &&
+        !this.draftTrajectoryVertex()
+      ) {
+        event.preventDefault();
+        this.deleteSelectedTrajectoryVertex();
+        return;
+      }
+
+      if (
+        !this.previewMedia() &&
+        this.selectedPointMode() === 'edit' &&
+        selectedMediaId &&
+        !this.draggedMediaId()
+      ) {
+        event.preventDefault();
+        this.deleteSelectedMedia();
+        return;
+      }
     }
   }
 
@@ -1848,6 +2059,17 @@ export class App {
     const target = event.target as HTMLElement;
     if (!target.closest('.map-bottom-rail')) {
       this.closeRailPopover();
+    }
+    if (!target.closest('.point-action-menu') && !target.closest('.map-point')) {
+      this.closePointActionMenu();
+    }
+    if (!target.closest('.media-context-menu') && !target.closest('.media-tile')) {
+      this.closeMediaContextMenu();
+      this.selectedMediaId.set(null);
+    }
+    if (!target.closest('.trajectory-context-menu') && !target.closest('.trajectory-vertex')) {
+      this.closeTrajectoryVertexContextMenu();
+      this.selectedTrajectoryVertexId.set(null);
     }
   }
 
@@ -1891,6 +2113,7 @@ export class App {
   protected onWindowPointerUp(event: PointerEvent): void {
     const resizeState = this.panelResizeState;
     if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      this.draggedMediaId.set(null);
       return;
     }
 
@@ -2051,7 +2274,7 @@ export class App {
     };
     const vertices = [...(point.trajectory?.vertices ?? []), nextVertex];
     this.updateSelectedPoint({ trajectory: { vertices } });
-    this.selectedTrajectoryVertexId.set(nextVertex.id);
+    this.setActiveTrajectoryVertexSelection(nextVertex.id);
     this.trajectoryEditMode.set('edit');
   }
 
@@ -2067,16 +2290,38 @@ export class App {
     this.updateSelectedPoint({ trajectory: { vertices } }, { save });
   }
 
+  private startTrajectoryContinuation(vertexId: string): void {
+    const point = this.selectedPoint();
+    if (!point || this.selectedPointMode() !== 'edit') {
+      return;
+    }
+
+    const source = point.trajectory?.vertices.find((vertex) => vertex.id === vertexId);
+    if (!source || point.trajectory?.vertices.at(-1)?.id !== vertexId) {
+      return;
+    }
+
+    this.trajectoryDragState = null;
+    this.setActiveTrajectoryVertexSelection(vertexId);
+    this.trajectoryEditMode.set('create');
+    this.draftTrajectoryVertex.set({
+      id: this.createTrajectoryVertexId(point.id),
+      x: source.x,
+      y: source.y,
+    });
+  }
+
   private deleteSelectedTrajectoryVertex(): void {
     const point = this.selectedPoint();
     const selectedVertexId = this.selectedTrajectoryVertexId();
-    if (!point || !selectedVertexId) {
+    if (!point || !selectedVertexId || this.trajectoryDragState || this.draftTrajectoryVertex()) {
       return;
     }
 
     const vertices = (point.trajectory?.vertices ?? []).filter((vertex) => vertex.id !== selectedVertexId);
     this.updateSelectedPoint({ trajectory: { vertices } });
     this.selectedTrajectoryVertexId.set(null);
+    this.closeTrajectoryVertexContextMenu();
   }
 
   private cancelTrajectoryInteraction(): void {
@@ -2260,6 +2505,8 @@ export class App {
       target.closest('button') ||
       target.closest('.point-details') ||
       target.closest('.point-action-menu') ||
+      target.closest('.media-context-menu') ||
+      target.closest('.trajectory-context-menu') ||
       target.closest('.level-switcher') ||
       target.closest('.map-bottom-rail'),
     );
@@ -2292,13 +2539,37 @@ export class App {
   }
 
   private availableRailWidth(): number {
-    const leftReservedWidth = this.sidebarOpen() ? this.leftPanelWidth() + MAP_STAGE_GUTTER : MAP_STAGE_GUTTER;
-    const rightReservedWidth = this.selectedPoint() ? this.rightPanelWidth() + MAP_STAGE_GUTTER : MAP_STAGE_GUTTER;
-    return this.viewportWidth() - leftReservedWidth - rightReservedWidth;
+    const viewportWidth = this.viewportWidth();
+    const center = viewportWidth / 2;
+    const leftBoundary = this.sidebarOpen() ? this.leftPanelWidth() + MAP_STAGE_GUTTER : MAP_STAGE_GUTTER;
+    const rightBoundary = this.selectedPoint()
+      ? viewportWidth - this.rightPanelWidth() - MAP_STAGE_GUTTER
+      : viewportWidth - MAP_STAGE_GUTTER;
+    return Math.max(0, 2 * Math.min(center - leftBoundary, rightBoundary - center));
   }
 
   private viewportWidth(): number {
     return globalThis.innerWidth || 1024;
+  }
+
+  private isTextEditingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    const tagName = target.tagName.toLowerCase();
+    return tagName === 'input' || tagName === 'textarea' || target.isContentEditable;
+  }
+
+  private isTextEditingActive(target: EventTarget | null): boolean {
+    return this.isTextEditingTarget(target) || this.isTextEditingTarget(globalThis.document?.activeElement ?? null);
+  }
+
+  private clearObjectSelection(): void {
+    this.selectedMediaId.set(null);
+    this.selectedTrajectoryVertexId.set(null);
+    this.closeMediaContextMenu();
+    this.closeTrajectoryVertexContextMenu();
   }
 
   private updateSelectedPoint(patch: Partial<MapPoint>, options: { save?: boolean } = {}): void {
@@ -2355,13 +2626,6 @@ export class App {
 
   private async loadStoredMaps(): Promise<void> {
     this.addStoredMaps(await this.storage.loadMaps());
-  }
-
-  private async ensureContentWorkspace(): Promise<void> {
-    const workspace = await this.contentWorkspaceService.ensureWorkspace(this.maps().map((map) => map.name));
-    if (workspace) {
-      this.contentWorkspace.set(workspace);
-    }
   }
 
   private addStoredMaps(maps: StoredMap[]): void {

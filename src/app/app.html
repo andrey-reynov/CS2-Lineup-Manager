@@ -189,19 +189,6 @@
             </div>
           </section>
 
-          <p class="settings-category">Locations</p>
-          <section class="settings-group is-paths" aria-label="Content workspace">
-            <div>
-              <strong>Path / Data</strong>
-              <small>User-editable maps, metadata, inboxes, and media folders.</small>
-            </div>
-            @if (contentWorkspace(); as workspace) {
-              <code>{{ workspace.contentDir }}</code>
-            } @else {
-              <code>Available in the desktop app after startup.</code>
-            }
-          </section>
-
           <p class="settings-category">Data</p>
           <section class="settings-card" aria-label="Import and export data">
             <div class="settings-action-row">
@@ -232,7 +219,6 @@
             (pointerup)="onBoardPointerUp($event)"
             (pointercancel)="closePointEditor()"
             (click)="onBoardClick($event)"
-            (dblclick)="onBoardDoubleClick($event)"
             (contextmenu)="onBoardContextMenu($event)"
             (wheel)="onBoardWheel($event)"
           >
@@ -282,6 +268,7 @@
                         [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
                         (pointerdown)="startTrajectoryVertexDrag(vertex.id, $event)"
                         (click)="appendTrajectoryFromVertex(vertex.id, $event)"
+                        (contextmenu)="openTrajectoryVertexContextMenu(vertex.id, isLast, $event)"
                       ></button>
                     }
                   }
@@ -307,6 +294,8 @@
                     [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
                     (pointerdown)="startResultPointDrag(point, $event)"
                     (click)="openPointEditor(point, $event)"
+                    (dblclick)="onResultPointDoubleClick(point, $event)"
+                    (contextmenu)="onResultPointContextMenu(point, $event)"
                   >
                     @if (grenadeCategoryForPoint(point)?.iconUrl; as iconUrl) {
                       <span
@@ -510,29 +499,40 @@
             </div>
 
             @if (pointActionMenu(); as menu) {
-              <div
-                class="point-action-menu"
-                [style.left.px]="menu.x"
-                [style.top.px]="menu.y"
-                (click)="$event.stopPropagation()"
-              >
-                <span>Add grenade</span>
-                <div class="point-action-grid">
-                  @for (category of grenadeCategories; track category.id) {
-                    <button type="button" (click)="assignGrenadeToPoint(menu.pointId, category, $event)">
-                      @if (category.iconUrl) {
-                        <span
-                          class="point-action-icon"
-                          aria-hidden="true"
-                          [style.mask-image]="'url(' + category.iconUrl + ')'"
-                          [style.-webkit-mask-image]="'url(' + category.iconUrl + ')'"
-                        ></span>
-                      }
-                      {{ category.label }}
-                    </button>
-                  }
+              @if (selectedPointMode() === 'edit' && selectedPoint()?.id === menu.pointId) {
+                <div
+                  class="trajectory-context-menu"
+                  [style.left.px]="menu.x"
+                  [style.top.px]="menu.y"
+                  (click)="$event.stopPropagation()"
+                >
+                  <button type="button" (click)="restartSelectedTrajectory($event)">Add/Edit trajectory</button>
                 </div>
-              </div>
+              } @else {
+                <div
+                  class="point-action-menu"
+                  [style.left.px]="menu.x"
+                  [style.top.px]="menu.y"
+                  (click)="$event.stopPropagation()"
+                >
+                  <span>Add grenade</span>
+                  <div class="point-action-grid">
+                    @for (category of grenadeCategories; track category.id) {
+                      <button type="button" (click)="assignGrenadeToPoint(menu.pointId, category, $event)">
+                        @if (category.iconUrl) {
+                          <span
+                            class="point-action-icon"
+                            aria-hidden="true"
+                            [style.mask-image]="'url(' + category.iconUrl + ')'"
+                            [style.-webkit-mask-image]="'url(' + category.iconUrl + ')'"
+                          ></span>
+                        }
+                        {{ category.label }}
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
             }
           </div>
         }
@@ -712,6 +712,7 @@
                       (dragstart)="onMediaDragStart(media.id, $event)"
                       (click)="selectMedia(media, $event)"
                       (dblclick)="openMediaPreviewFromEdit(media, $event)"
+                      (contextmenu)="openMediaContextMenu(media, $event)"
                     >
                       @if (media.type === 'image') {
                         <img [src]="media.url" [alt]="media.name" />
@@ -719,32 +720,6 @@
                         <video [src]="media.url" muted></video>
                       }
                     </button>
-                    @if (isMediaSelected(media.id) && media.type === 'image') {
-                      <div class="media-role-actions">
-                        <button
-                          type="button"
-                          [class.is-active]="media.role === 'start'"
-                          (click)="assignSelectedMediaRole('start', $event)"
-                        >
-                          Start
-                        </button>
-                        <button
-                          type="button"
-                          [class.is-active]="media.role === 'result'"
-                          (click)="assignSelectedMediaRole('result', $event)"
-                        >
-                          Result
-                        </button>
-                        <button
-                          type="button"
-                          class="is-delete"
-                          aria-label="Delete media"
-                          (click)="deleteSelectedMediaFromButton($event)"
-                        >
-                          <span class="ui-icon" style="--icon-url: url('/icons/delete_outline.svg')" aria-hidden="true"></span>
-                        </button>
-                      </div>
-                    }
                   </div>
                 }
                 <label class="media-upload">
@@ -840,25 +815,41 @@
           </aside>
         }
       }
+      @if (mediaContextMenu(); as menu) {
+        @if (mediaContextMenuItem(); as media) {
+          <div
+            class="media-context-menu"
+            [style.left.px]="menu.x"
+            [style.top.px]="menu.y"
+            (click)="$event.stopPropagation()"
+          >
+            @if (media.type === 'image') {
+              <button type="button" (click)="assignContextMediaRole('start', $event)">Start</button>
+              <button type="button" (click)="assignContextMediaRole('result', $event)">Result</button>
+            }
+            <button type="button" class="is-delete" (click)="deleteContextMedia($event)">Delete</button>
+          </div>
+        }
+      }
+      @if (trajectoryVertexContextMenu(); as menu) {
+        <div
+          class="trajectory-context-menu"
+          [style.left.px]="menu.x"
+          [style.top.px]="menu.y"
+          (click)="$event.stopPropagation()"
+        >
+          @if (menu.isLast) {
+            <button type="button" (click)="continueTrajectoryFromContext($event)">Continue</button>
+          }
+          <button type="button" class="is-delete" (click)="deleteTrajectoryVertexFromContext($event)">Delete</button>
+        </div>
+      }
     </div>
   </section>
 </main>
 
 @if (previewMedia(); as media) {
   <div class="media-preview" role="dialog" aria-modal="true" (click)="closeMediaPreview()">
-    <div class="media-preview-toolbar" (click)="$event.stopPropagation()">
-      <button type="button" aria-label="Zoom out" (click)="zoomPreview(-0.25, $event)">
-        <span class="ui-icon" style="--icon-url: url('/icons/cap_down.svg')" aria-hidden="true"></span>
-      </button>
-      <span>{{ (previewZoom() * 100).toFixed(0) }}%</span>
-      <button type="button" aria-label="Zoom in" (click)="zoomPreview(0.25, $event)">
-        <span class="ui-icon" style="--icon-url: url('/icons/cap_up.svg')" aria-hidden="true"></span>
-      </button>
-      <button type="button" aria-label="Close" (click)="closeMediaPreview()">
-        <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
-      </button>
-    </div>
-
     @if (previewGallery().length > 1) {
       <button class="media-preview-nav is-left" type="button" aria-label="Previous media" (click)="showPreviousPreviewMedia($event)">
         <span class="ui-icon" style="--icon-url: url('/icons/left_arrow_outline.svg')" aria-hidden="true"></span>
@@ -893,6 +884,8 @@
         ></video>
       }
     </div>
+
+    <p class="media-preview-hint">Click away or ESC to exit preview</p>
 
     @if (previewGallery().length > 1) {
       <div class="media-preview-gallery" (click)="$event.stopPropagation()">

@@ -70,7 +70,7 @@ async function createLineup(fixture: ReturnType<typeof TestBed.createComponent<A
   const board = compiled.querySelector('.map-board') as HTMLElement;
   setBoardRect(board);
 
-  board.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 50, clientY: 50 }));
+  board.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 50, clientY: 50 }));
   fixture.detectChanges();
   (compiled.querySelector('.point-action-grid button') as HTMLButtonElement).click();
   fixture.detectChanges();
@@ -262,6 +262,19 @@ describe('App', () => {
     expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(true);
     expect(compiled.querySelector('.map-bottom-rail')?.classList.contains('is-compact')).toBe(true);
     expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(2);
+  });
+
+  it('should keep the bottom rail compact after closing nav when the right panel overlaps the full rail', async () => {
+    setWindowWidth(1200);
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+
+    app.closeSidebar();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(true);
+    expect(compiled.querySelector('.map-bottom-rail')?.classList.contains('is-compact')).toBe(true);
   });
 
   it('should keep the bottom rail anchored to the viewport center when panels change', async () => {
@@ -471,10 +484,25 @@ describe('App', () => {
     expect(host.style.getPropertyValue('--team-ct')).toBe('#56b4e9');
     expect(host.style.getPropertyValue('--team-t')).toBe('#d55e00');
     expect(host.style.getPropertyValue('--vscode-accent')).toBe('#2ea043');
+    expect(getComputedStyle(Array.from(compiled.querySelectorAll('.settings-swatch'))[1] as HTMLElement).transition)
+      .toContain('background');
     localStorage.removeItem('cs2nades:user-settings');
   });
 
-  it('should create draft spots with double click instead of single click', async () => {
+  it('should hide unused content workspace settings', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.sidebar-footer .nav-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('[aria-label="Content workspace"]')).toBeFalsy();
+    expect(compiled.textContent).not.toContain('Locations');
+  });
+
+  it('should create draft spots with right click only and clear them on click away', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -490,8 +518,18 @@ describe('App', () => {
 
     board.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 10, clientY: 10 }));
     fixture.detectChanges();
+    expect(compiled.querySelector('.map-point')).toBeFalsy();
+    expect(compiled.querySelector('.point-action-menu')).toBeFalsy();
+
+    board.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }));
+    fixture.detectChanges();
     expect(compiled.querySelector('.map-point')).toBeTruthy();
     expect(compiled.querySelector('.point-action-menu')).toBeTruthy();
+
+    board.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 90, clientY: 90 }));
+    fixture.detectChanges();
+    expect(compiled.querySelector('.map-point')).toBeFalsy();
+    expect(compiled.querySelector('.point-action-menu')).toBeFalsy();
   });
 
   it('should open new lineups in edit mode and save to view mode', async () => {
@@ -504,7 +542,7 @@ describe('App', () => {
 
     const board = compiled.querySelector('.map-board') as HTMLElement;
     setBoardRect(board);
-    board.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 10, clientY: 10 }));
+    board.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }));
     fixture.detectChanges();
     (compiled.querySelector('.point-action-grid button') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -551,7 +589,7 @@ describe('App', () => {
 
     const board = compiled.querySelector('.map-board') as HTMLElement;
     setBoardRect(board);
-    board.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 10, clientY: 10 }));
+    board.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }));
     fixture.detectChanges();
     (compiled.querySelector('.point-action-grid button') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -566,6 +604,78 @@ describe('App', () => {
 
     expect(compiled.querySelector('.point-details-header')?.textContent).toContain('Untitled lineup');
     expect(compiled.querySelector('.point-action-menu')).toBeFalsy();
+  });
+
+  it('should close a readonly selected lineup with Escape', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+
+    (compiled.querySelector('.save-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.selectedPointMode()).toBe('view');
+    expect(compiled.querySelector('.point-details')).toBeTruthy();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint()).toBeUndefined();
+    expect(compiled.querySelector('.point-details')).toBeFalsy();
+  });
+
+  it('should close fullscreen preview before closing the readonly lineup with Escape', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'one',
+      name: 'one.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['one'], { type: 'image/png' }),
+      url: 'blob:one',
+      role: 'detail' as const,
+    };
+
+    app.updateSelectedPoint({ media: [media] });
+    (compiled.querySelector('.save-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    app.openMediaPreview(media);
+    fixture.detectChanges();
+
+    expect(app.selectedPointMode()).toBe('view');
+    expect(app.previewMedia()?.id).toBe('one');
+    expect(compiled.querySelector('.point-details')).toBeTruthy();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(app.previewMedia()).toBeUndefined();
+    expect(app.selectedPoint()).toBeTruthy();
+    expect(compiled.querySelector('.point-details')).toBeTruthy();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint()).toBeUndefined();
+    expect(compiled.querySelector('.point-details')).toBeFalsy();
+  });
+
+  it('should not close an edit-mode lineup with Escape', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+
+    app.cancelTrajectoryInteraction();
+    fixture.detectChanges();
+
+    expect(app.selectedPointMode()).toBe('edit');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint()).toBeTruthy();
+    expect(compiled.querySelector('.point-details input')).toBeTruthy();
   });
 
   it('should show a selected lineup trajectory and hide it when no lineup is selected', async () => {
@@ -688,6 +798,250 @@ describe('App', () => {
     expect(compiled.querySelector('.point-details input')).toBeTruthy();
   });
 
+  it('should not create a new point from map double click while editing a lineup', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const board = compiled.querySelector('.map-board') as HTMLElement;
+
+    expect(app.selectedPoint()).toBeTruthy();
+    board.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 80, clientY: 80 }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.point-action-menu')).toBeNull();
+    expect(app.addedPoints()[app.currentLevelKey()]).toHaveLength(1);
+  });
+
+  it('should not delete media or trajectory vertices with Backspace while typing', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'one',
+      name: 'one.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['one'], { type: 'image/png' }),
+      url: 'blob:one',
+      role: 'detail' as const,
+    };
+
+    app.updateSelectedPoint({
+      media: [media],
+      trajectory: { vertices: [{ id: 'vertex-1', x: 20, y: 20 }] },
+    });
+    app.selectedMediaId.set('one');
+    fixture.detectChanges();
+
+    const titleInput = compiled.querySelector('.point-details input') as HTMLInputElement;
+    titleInput.focus();
+    titleInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().media).toHaveLength(1);
+    expect(app.selectedPoint().trajectory.vertices).toHaveLength(1);
+
+    app.selectedMediaId.set(null);
+    app.selectedTrajectoryVertexId.set('vertex-1');
+    titleInput.focus();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().media).toHaveLength(1);
+    expect(app.selectedPoint().trajectory.vertices).toHaveLength(1);
+  });
+
+  it('should restart trajectory creation from the selected point with double click and context menu', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const point = compiled.querySelector('.map-point') as HTMLButtonElement;
+
+    app.cancelTrajectoryInteraction();
+    fixture.detectChanges();
+    expect(app.trajectoryEditMode()).toBeNull();
+
+    point.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    fixture.detectChanges();
+
+    expect(app.trajectoryEditMode()).toBe('create');
+    expect(app.draftTrajectoryVertex()).toBeTruthy();
+
+    app.cancelTrajectoryInteraction();
+    point.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 50, clientY: 50 }));
+    fixture.detectChanges();
+    expect(compiled.querySelector('.trajectory-context-menu')?.textContent).toContain('Add/Edit trajectory');
+
+    (compiled.querySelector('.trajectory-context-menu button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.trajectoryEditMode()).toBe('create');
+    expect(app.draftTrajectoryVertex()).toBeTruthy();
+  });
+
+  it('should continue or delete trajectory vertices from the vertex context menu', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+
+    app.cancelTrajectoryInteraction();
+    app.updateSelectedPoint({
+      trajectory: {
+        vertices: [
+          { id: 'bend-1', x: 30, y: 30 },
+          { id: 'start-1', x: 40, y: 40 },
+        ],
+      },
+    });
+    fixture.detectChanges();
+
+    const vertices = compiled.querySelectorAll('.trajectory-vertex');
+    vertices[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.trajectory-context-menu')?.textContent).toContain('Continue');
+    (Array.from(compiled.querySelectorAll('.trajectory-context-menu button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'Continue')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(app.trajectoryEditMode()).toBe('create');
+    expect(app.draftTrajectoryVertex()).toMatchObject({ x: 40, y: 40 });
+
+    app.cancelTrajectoryInteraction();
+    fixture.detectChanges();
+    const remainingVertices = compiled.querySelectorAll('.trajectory-vertex');
+    remainingVertices[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 50, clientY: 50 }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.trajectory-context-menu')?.textContent).not.toContain('Continue');
+    (Array.from(compiled.querySelectorAll('.trajectory-context-menu button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'Delete')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().trajectory.vertices.map((vertex: { id: string }) => vertex.id)).toEqual(['start-1']);
+  });
+
+  it('should show only one trajectory context menu and close it on click away', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const board = compiled.querySelector('.map-board') as HTMLElement;
+    const point = compiled.querySelector('.map-point') as HTMLButtonElement;
+
+    app.cancelTrajectoryInteraction();
+    app.updateSelectedPoint({
+      trajectory: {
+        vertices: [{ id: 'start-1', x: 40, y: 40 }],
+      },
+    });
+    fixture.detectChanges();
+
+    point.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 50, clientY: 50 }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelectorAll('.trajectory-context-menu')).toHaveLength(1);
+    expect(compiled.querySelector('.trajectory-context-menu')?.textContent).toContain('Add/Edit trajectory');
+
+    (compiled.querySelector('.trajectory-vertex') as HTMLButtonElement).dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }),
+    );
+    fixture.detectChanges();
+
+    expect(compiled.querySelectorAll('.trajectory-context-menu')).toHaveLength(1);
+    expect(compiled.querySelector('.trajectory-context-menu')?.textContent).toContain('Continue');
+    expect(compiled.querySelector('.trajectory-context-menu')?.textContent).not.toContain('Add/Edit trajectory');
+
+    board.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 90, clientY: 90 }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.trajectory-context-menu')).toBeFalsy();
+  });
+
+  it('should delete selected trajectory vertices with guarded Delete shortcut', async () => {
+    const fixture = TestBed.createComponent(App);
+    await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+
+    app.cancelTrajectoryInteraction();
+    app.updateSelectedPoint({ trajectory: { vertices: [{ id: 'vertex-1', x: 20, y: 20 }] } });
+    app.selectedTrajectoryVertexId.set('vertex-1');
+    fixture.detectChanges();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().trajectory.vertices).toEqual([]);
+  });
+
+  it('should keep media and trajectory vertex selection mutually exclusive', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'one',
+      name: 'one.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['one'], { type: 'image/png' }),
+      url: 'blob:one',
+      role: 'detail' as const,
+    };
+
+    app.cancelTrajectoryInteraction();
+    app.updateSelectedPoint({
+      media: [media],
+      trajectory: { vertices: [{ id: 'vertex-1', x: 20, y: 20 }] },
+    });
+    app.selectedTrajectoryVertexId.set('vertex-1');
+    fixture.detectChanges();
+
+    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.selectedMediaId()).toBe('one');
+    expect(app.selectedTrajectoryVertexId()).toBeNull();
+
+    (compiled.querySelector('.trajectory-vertex') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(app.selectedMediaId()).toBeNull();
+    expect(app.selectedTrajectoryVertexId()).toBeTruthy();
+  });
+
+  it('should unselect selected media and trajectory vertices on click away', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const board = compiled.querySelector('.map-board') as HTMLElement;
+    const media = {
+      id: 'one',
+      name: 'one.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['one'], { type: 'image/png' }),
+      url: 'blob:one',
+      role: 'detail' as const,
+    };
+
+    app.cancelTrajectoryInteraction();
+    app.updateSelectedPoint({
+      media: [media],
+      trajectory: { vertices: [{ id: 'vertex-1', x: 20, y: 20 }] },
+    });
+    app.selectedMediaId.set('one');
+    app.selectedTrajectoryVertexId.set('vertex-1');
+    fixture.detectChanges();
+
+    board.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 80, clientY: 80 }));
+    fixture.detectChanges();
+
+    expect(app.selectedMediaId()).toBeNull();
+    expect(app.selectedTrajectoryVertexId()).toBeNull();
+  });
+
   it('should keep the selected lineup when clicking the bottom rail', async () => {
     const fixture = TestBed.createComponent(App);
     const compiled = await createLineup(fixture);
@@ -773,7 +1127,7 @@ describe('App', () => {
     expect(app.previewMedia()?.id).toBe('two');
   });
 
-  it('should select media in edit mode and delete it with the Delete key', async () => {
+  it('should select media in edit mode and delete it with the guarded Delete key', async () => {
     const fixture = TestBed.createComponent(App);
     const compiled = await createLineup(fixture);
     const app = fixture.componentInstance as any;
@@ -858,7 +1212,7 @@ describe('App', () => {
     expect(app.draggedMediaId()).toBeNull();
   });
 
-  it('should delete selected media from the media tile action button', async () => {
+  it('should assign and delete media from the media context menu', async () => {
     const fixture = TestBed.createComponent(App);
     const compiled = await createLineup(fixture);
     const app = fixture.componentInstance as any;
@@ -875,9 +1229,27 @@ describe('App', () => {
     app.updateSelectedPoint({ media: [media] });
     fixture.detectChanges();
 
-    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).click();
+    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }),
+    );
     fixture.detectChanges();
-    (compiled.querySelector('.media-role-actions .is-delete') as HTMLButtonElement).click();
+    expect(compiled.querySelector('.media-role-actions')).toBeFalsy();
+    expect(compiled.querySelector('.media-context-menu')).toBeTruthy();
+
+    (Array.from(compiled.querySelectorAll('.media-context-menu button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'Start')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(app.selectedPoint().media[0].role).toBe('start');
+
+    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }),
+    );
+    fixture.detectChanges();
+    (Array.from(compiled.querySelectorAll('.media-context-menu button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'Delete')
+      ?.click();
     fixture.detectChanges();
 
     expect(app.selectedPoint().media).toEqual([]);
