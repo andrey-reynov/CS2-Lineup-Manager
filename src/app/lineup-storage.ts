@@ -660,13 +660,14 @@ export class WebLineupStorage implements LineupStoragePort {
     const groups = new Map<string, StoredPoint[]>();
     for (const point of points) {
       const resultSpotId = point.resultSpotId ?? point.id;
-      groups.set(resultSpotId, [...(groups.get(resultSpotId) ?? []), { ...point, resultSpotId }]);
+      const groupKey = `${point.mapId}:${point.levelId}:${resultSpotId}`;
+      groups.set(groupKey, [...(groups.get(groupKey) ?? []), { ...point, resultSpotId }]);
     }
 
-    return Array.from(groups.entries()).map(([id, lineups]) => {
+    return Array.from(groups.values()).map((lineups) => {
       const firstLineup = lineups[0];
       return {
-        id,
+        id: firstLineup.resultSpotId ?? firstLineup.id,
         label: firstLineup.label,
         mapId: firstLineup.mapId,
         levelId: firstLineup.levelId,
@@ -1342,13 +1343,14 @@ class DesktopLineupStorage implements LineupStoragePort {
     const groups = new Map<string, StoredPoint[]>();
     for (const point of points) {
       const resultSpotId = point.resultSpotId ?? point.id;
-      groups.set(resultSpotId, [...(groups.get(resultSpotId) ?? []), { ...point, resultSpotId }]);
+      const groupKey = `${point.mapId}:${point.levelId}:${resultSpotId}`;
+      groups.set(groupKey, [...(groups.get(groupKey) ?? []), { ...point, resultSpotId }]);
     }
 
-    return Array.from(groups.entries()).map(([id, lineups]) => {
+    return Array.from(groups.values()).map((lineups) => {
       const firstLineup = lineups[0];
       return {
-        id,
+        id: firstLineup.resultSpotId ?? firstLineup.id,
         label: firstLineup.label,
         mapId: firstLineup.mapId,
         levelId: firstLineup.levelId,

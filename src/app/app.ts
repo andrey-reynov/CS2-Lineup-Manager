@@ -561,6 +561,7 @@ export class App {
   protected readonly mapPan = signal({ x: 0, y: 0 });
   protected readonly selectedPointId = signal<string | null>(null);
   protected readonly selectedPointMode = signal<PointMode>('view');
+  protected readonly lineupChooserOpen = signal(false);
   protected readonly pointActionMenu = signal<PointActionMenu | null>(null);
   protected readonly mediaContextMenu = signal<MediaContextMenu | null>(null);
   protected readonly trajectoryVertexContextMenu = signal<TrajectoryVertexContextMenu | null>(null);
@@ -679,7 +680,7 @@ export class App {
   protected readonly currentResultSpotGroups = computed<ResultSpotGroup[]>(() => {
     const groups = new Map<string, MapPoint[]>();
     for (const point of this.currentPoints()) {
-      const groupId = this.resultSpotId(point);
+      const groupId = this.resultSpotGroupKey(point);
       groups.set(groupId, [...(groups.get(groupId) ?? []), point]);
     }
 
@@ -746,11 +747,13 @@ export class App {
       return [];
     }
 
-    const groupId = this.resultSpotId(point);
+    const groupId = this.resultSpotGroupKey(point);
     return (this.addedPoints()[this.currentLevelKey()] ?? [])
-      .filter((variant) => this.resultSpotId(variant) === groupId)
+      .filter((variant) => this.resultSpotGroupKey(variant) === groupId)
       .sort((a, b) => (a.createdAt ?? a.id).localeCompare(b.createdAt ?? b.id));
   });
+
+  protected readonly selectedResultSpotHasMultipleVariants = computed(() => this.selectedResultSpotVariants().length > 1);
 
   protected readonly mediaPoolItems = computed(() => {
     const assets = new Map<string, PointMedia>();
@@ -1214,6 +1217,7 @@ export class App {
       this.draftPoint.set(null);
       this.selectedPointId.set(point.id);
       this.selectedPointMode.set('view');
+      this.lineupChooserOpen.set(this.resultSpotVariantCount(point) > 1);
       this.trajectoryEditMode.set(null);
       this.selectedTrajectoryVertexId.set(null);
       this.draftTrajectoryVertex.set(null);
@@ -1230,6 +1234,7 @@ export class App {
     const rect = board.getBoundingClientRect();
     const position = this.getPointActionMenuPosition(event.clientX - rect.left, event.clientY - rect.top, rect);
     this.selectedPointId.set(null);
+    this.lineupChooserOpen.set(false);
     this.closeFloatingMenus();
     this.pointActionMenu.set({
       pointId: point.id,
@@ -1241,6 +1246,7 @@ export class App {
   protected closePointEditor(): void {
     this.selectedPointId.set(null);
     this.selectedPointMode.set('view');
+    this.lineupChooserOpen.set(false);
     this.cancelTrajectoryInteraction();
     this.closePointActionMenu();
     this.previewMediaId.set(null);
@@ -1269,11 +1275,34 @@ export class App {
     return point.resultSpotId ?? point.id;
   }
 
+  private resultSpotGroupKey(point: Pick<MapPoint, 'mapId' | 'levelId' | 'id' | 'resultSpotId'>): string {
+    return `${point.mapId}:${point.levelId}:${point.resultSpotId ?? point.id}`;
+  }
+
+  private resultSpotVariantCount(point: MapPoint): number {
+    const groupId = this.resultSpotGroupKey(point);
+    return (this.addedPoints()[this.currentLevelKey()] ?? [])
+      .filter((variant) => this.resultSpotGroupKey(variant) === groupId).length;
+  }
+
+  protected openLineupChooser(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (this.selectedResultSpotHasMultipleVariants()) {
+      this.selectedPointMode.set('view');
+      this.cancelTrajectoryInteraction();
+      this.clearObjectSelection();
+      this.lineupChooserOpen.set(true);
+      this.updateRailCompactMode();
+    }
+  }
+
   protected selectLineupVariant(pointId: string, event?: Event): void {
     event?.preventDefault();
     event?.stopPropagation();
     this.selectedPointId.set(pointId);
     this.selectedPointMode.set('view');
+    this.lineupChooserOpen.set(false);
     this.cancelTrajectoryInteraction();
     this.clearObjectSelection();
     this.updateRailCompactMode();
@@ -1308,12 +1337,12 @@ export class App {
 
   protected deleteResultSpot(point: MapPoint, event: MouseEvent): void {
     event.stopPropagation();
-    const groupId = this.resultSpotId(point);
+    const groupId = this.resultSpotGroupKey(point);
     const key = this.currentLevelKey();
-    const variants = (this.addedPoints()[key] ?? []).filter((item) => this.resultSpotId(item) === groupId);
+    const variants = (this.addedPoints()[key] ?? []).filter((item) => this.resultSpotGroupKey(item) === groupId);
     this.addedPoints.update((points) => ({
       ...points,
-      [key]: (points[key] ?? []).filter((item) => this.resultSpotId(item) !== groupId),
+      [key]: (points[key] ?? []).filter((item) => this.resultSpotGroupKey(item) !== groupId),
     }));
     for (const variant of variants) {
       void this.storage.deletePoint(variant.id);
@@ -1471,6 +1500,7 @@ export class App {
 
   protected editSelectedPoint(): void {
     this.selectedPointMode.set('edit');
+    this.lineupChooserOpen.set(false);
   }
 
   protected addLineupVariantFromSelected(event?: Event): void {
@@ -1508,6 +1538,7 @@ export class App {
     }));
     this.selectedPointId.set(variant.id);
     this.selectedPointMode.set('edit');
+    this.lineupChooserOpen.set(false);
     this.trajectoryEditMode.set('create');
     this.draftTrajectoryVertex.set({
       id: this.createTrajectoryVertexId(variant.id),
@@ -2132,20 +2163,6 @@ export class App {
     await this.saveZip(blob, `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`);
   }
 
-  protected async exportLegacyZip(): Promise<void> {
-    try {
-      const [points, maps] = await Promise.all([
-        this.legacyStorage.loadPoints(),
-        this.legacyStorage.loadMaps(),
-      ]);
-      const blob = await this.legacyStorage.exportZip(points, maps);
-      await this.saveZip(blob, `cs2-nades-legacy-backup-${new Date().toISOString().slice(0, 10)}.zip`);
-      this.importError.set(null);
-    } catch (error) {
-      this.importError.set(error instanceof Error ? error.message : 'Legacy export failed');
-    }
-  }
-
   protected async migrateLegacyDataFromSettings(): Promise<void> {
     const getMigrationStatus = this.storage.getMigrationStatus?.bind(this.storage);
     const migrateLegacyData = this.storage.migrateLegacyData?.bind(this.storage);
@@ -2218,13 +2235,23 @@ export class App {
     options: { alert?: boolean } = {},
   ): Promise<string> {
     try {
+      const dialog = await import('@tauri-apps/plugin-dialog');
       const core = await import('@tauri-apps/api/core');
-      const path = await core.invoke<string>('save_backup_zip', {
-        fileName,
+      const selectedPath = await dialog.save({
+        defaultPath: fileName,
+        filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+      });
+      if (!selectedPath) {
+        return '';
+      }
+
+      const zipPath = selectedPath.toLowerCase().endsWith('.zip') ? selectedPath : `${selectedPath}.zip`;
+      const path = await core.invoke<string>('save_zip_to_path', {
+        path: zipPath,
         bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
       });
       if (options.alert !== false) {
-        globalThis.alert?.(`Backup saved:\n${path}`);
+        globalThis.alert?.(`ZIP exported:\n${path}`);
       }
       this.importError.set(null);
       return path;
@@ -2234,10 +2261,8 @@ export class App {
     }
   }
 
-  protected async importZip(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
+  protected async importZip(event?: Event): Promise<void> {
+    const file = event ? this.fileFromInputEvent(event) : await this.pickZipFile();
     if (!file) {
       return;
     }
@@ -2255,6 +2280,46 @@ export class App {
     } catch (error) {
       this.importError.set(error instanceof Error ? error.message : 'Import failed');
     }
+  }
+
+  private fileFromInputEvent(event: Event): File | undefined {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    return file;
+  }
+
+  private async pickZipFile(): Promise<File | undefined> {
+    if ('__TAURI_INTERNALS__' in globalThis) {
+      return this.pickZipFileWithTauri();
+    }
+
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.zip,application/zip';
+      input.addEventListener('change', () => {
+        resolve(input.files?.[0]);
+        input.remove();
+      }, { once: true });
+      input.click();
+    });
+  }
+
+  private async pickZipFileWithTauri(): Promise<File | undefined> {
+    const dialog = await import('@tauri-apps/plugin-dialog');
+    const core = await import('@tauri-apps/api/core');
+    const selectedPath = await dialog.open({
+      multiple: false,
+      filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+    });
+    if (!selectedPath || Array.isArray(selectedPath)) {
+      return undefined;
+    }
+
+    const bytes = await core.invoke<number[]>('read_zip_file', { path: selectedPath });
+    const name = selectedPath.split(/[\\/]/).pop() || 'lineups.zip';
+    return new File([new Uint8Array(bytes)], name, { type: 'application/zip' });
   }
 
   @HostListener('window:paste', ['$event'])
@@ -2301,8 +2366,19 @@ export class App {
     }
 
     if (event.key === 'Escape') {
+      if (this.mediaPoolOpen()) {
+        event.preventDefault();
+        this.closeMediaPool();
+        return;
+      }
+
       if (this.selectedPoint() && this.selectedPointMode() === 'view') {
         event.preventDefault();
+        if (!this.lineupChooserOpen() && this.selectedResultSpotHasMultipleVariants()) {
+          this.openLineupChooser();
+          return;
+        }
+
         this.closePointEditor();
         return;
       }
@@ -2576,13 +2652,13 @@ export class App {
   }
 
   private updateResultSpotPosition(point: MapPoint, position: Pick<MapPoint, 'x' | 'y'>, save: boolean): void {
-    const groupId = this.resultSpotId(point);
+    const groupId = this.resultSpotGroupKey(point);
     const key = this.currentLevelKey();
     let nextVariants: MapPoint[] = [];
     this.addedPoints.update((points) => ({
       ...points,
       [key]: (points[key] ?? []).map((item) => {
-        if (this.resultSpotId(item) !== groupId) {
+        if (this.resultSpotGroupKey(item) !== groupId) {
           return item;
         }
         const nextItem = { ...item, ...position };
@@ -2600,9 +2676,9 @@ export class App {
   }
 
   private saveResultSpotVariants(point: MapPoint): void {
-    const groupId = this.resultSpotId(point);
+    const groupId = this.resultSpotGroupKey(point);
     for (const variant of this.addedPoints()[this.currentLevelKey()] ?? []) {
-      if (this.resultSpotId(variant) === groupId && variant.grenadeCategoryId) {
+      if (this.resultSpotGroupKey(variant) === groupId && variant.grenadeCategoryId) {
         void this.storage.savePoint(this.toStoredPoint(variant));
       }
     }

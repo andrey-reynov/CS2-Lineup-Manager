@@ -76,6 +76,23 @@ fn save_backup_zip(app: tauri::AppHandle, file_name: String, bytes: Vec<u8>) -> 
   Ok(path_to_string(path))
 }
 
+#[tauri::command]
+fn save_zip_to_path(path: String, bytes: Vec<u8>) -> Result<String, String> {
+  let zip_path = PathBuf::from(path);
+  if let Some(parent) = zip_path.parent() {
+    fs::create_dir_all(parent)
+      .map_err(|error| format!("Failed to create {}: {error}", parent.to_string_lossy()))?;
+  }
+  fs::write(&zip_path, bytes).map_err(|error| format!("Failed to write {}: {error}", zip_path.to_string_lossy()))?;
+  Ok(path_to_string(zip_path))
+}
+
+#[tauri::command]
+fn read_zip_file(path: String) -> Result<Vec<u8>, String> {
+  let zip_path = PathBuf::from(path);
+  fs::read(&zip_path).map_err(|error| format!("Failed to read {}: {error}", zip_path.to_string_lossy()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -85,7 +102,9 @@ pub fn run() {
       ensure_content_workspace,
       write_content_file,
       read_content_file,
-      save_backup_zip
+      save_backup_zip,
+      save_zip_to_path,
+      read_zip_file
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

@@ -653,34 +653,95 @@ h2 {
   padding: 0 14px;
 }
 
-.lineup-variant-list {
+.lineup-choice-list {
   display: grid;
-  gap: 6px;
-}
-
-.lineup-variant-list button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  min-height: 36px;
-  padding: 7px 9px;
-  color: var(--vscode-text-muted);
-  background: var(--vscode-control-bg);
-  border: 1px solid var(--vscode-border-muted);
-  border-radius: 6px;
 }
 
-.lineup-variant-list button.is-active {
+.lineup-choice-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 108px;
+  align-items: stretch;
+  gap: 12px;
+  min-height: 86px;
+  padding: 8px;
   color: var(--vscode-text);
-  border-color: var(--vscode-accent);
+  text-align: left;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--vscode-panel-bg) 94%, black) 0%, transparent 115%),
+    var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
-.lineup-variant-list span,
-.lineup-variant-list small {
+.lineup-choice-card:hover,
+.lineup-choice-card:focus-visible,
+.lineup-choice-card.is-active {
+  border-color: var(--vscode-focus-ring);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--vscode-shadow) 68%, transparent);
+  outline: 0;
+}
+
+.lineup-choice-card:active {
+  transform: translateY(1px);
+}
+
+.lineup-choice-copy {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.lineup-choice-copy strong,
+.lineup-choice-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lineup-choice-copy strong {
+  color: var(--vscode-text-strong);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.lineup-choice-copy small {
+  color: var(--vscode-text-muted);
+  font-size: 0.74rem;
+  font-weight: 400;
+}
+
+.lineup-choice-preview {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 68px;
+  color: var(--vscode-text-muted);
+  background: color-mix(in srgb, var(--vscode-control-bg) 84%, black);
+  border-radius: 6px;
+}
+
+.lineup-choice-preview img,
+.lineup-choice-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lineup-choice-preview em {
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 400;
+  text-transform: uppercase;
 }
 
 .settings-toggle {
@@ -868,7 +929,7 @@ h2 {
   height: 36px;
   padding: 0;
   color: var(--vscode-text);
-  font-weight: 800;
+  font-weight: 400;
   background: var(--vscode-control-bg);
   border: 1px solid var(--vscode-border-muted);
   border-radius: 6px;
@@ -1461,6 +1522,10 @@ h2 {
   gap: 16px;
 }
 
+.point-details.is-lineup-chooser {
+  overflow: hidden;
+}
+
 .point-details-header {
   display: flex;
   align-items: center;
@@ -1468,6 +1533,22 @@ h2 {
   gap: 12px;
   color: var(--vscode-text-strong);
   font-weight: 900;
+}
+
+.point-details-header.has-back {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
+}
+
+.point-details-header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.point-details-header.has-back span {
+  text-align: center;
 }
 
 .point-details-header button {
@@ -1485,6 +1566,23 @@ h2 {
 
 .point-details-header button .ui-icon {
   --icon-size: 15px;
+}
+
+.is-lineup-chooser .lineup-choice-list {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.lineup-detail-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.is-lineup-chooser .lineup-detail-actions {
+  grid-template-columns: 1fr;
 }
 
 .field {

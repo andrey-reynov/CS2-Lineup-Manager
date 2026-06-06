@@ -513,6 +513,7 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect(compiled.textContent).not.toContain('Migrate Legacy Data');
+    expect(compiled.textContent).not.toContain('Export Legacy Backup');
 
     app.storageMigrationStatus.set({
       isDesktop: true,
@@ -654,12 +655,35 @@ describe('App', () => {
     expect(app.selectedResultSpotVariants()).toHaveLength(2);
     expect(app.selectedPoint().id).not.toBe(firstPointId);
     expect(app.selectedPoint().resultSpotId).toBe(app.selectedResultSpotVariants()[0].resultSpotId);
-    expect(compiled.querySelector('.lineup-variant-list')).toBeTruthy();
+    expect(app.selectedPointMode()).toBe('edit');
+    expect(compiled.querySelector('.lineup-choice-list')).toBeFalsy();
 
-    (compiled.querySelector('.lineup-variant-list button') as HTMLButtonElement).click();
+    (compiled.querySelector('.save-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (compiled.querySelector('.point-details-header button[aria-label="Close"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (compiled.querySelector('.map-point') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.lineup-choice-list')).toBeTruthy();
+    (compiled.querySelector('.lineup-choice-card') as HTMLButtonElement).click();
     fixture.detectChanges();
 
     expect(app.selectedPoint().id).toBe(firstPointId);
+    expect(app.lineupChooserOpen()).toBe(false);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint()).toBeTruthy();
+    expect(app.lineupChooserOpen()).toBe(true);
+    expect(compiled.querySelector('.lineup-choice-list')).toBeTruthy();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(app.selectedPoint()).toBeUndefined();
+    expect(compiled.querySelector('.point-details')).toBeFalsy();
   });
 
   it('should attach existing shared media from the media pool modal', async () => {

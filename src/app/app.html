@@ -201,18 +201,13 @@
               </button>
             </div>
             <div class="settings-action-row">
-              <label class="settings-action ui-button">
-                <input type="file" accept=".zip,application/zip" (change)="importZip($event)" />
+              <button type="button" class="settings-action ui-button" (click)="importZip()">
                 <span class="ui-icon" style="--icon-url: url('/icons/upload_outline.svg')" aria-hidden="true"></span>
                 Import ZIP
-              </label>
+              </button>
               <button type="button" class="settings-action ui-button" (click)="exportZip()">
                 <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
                 Export ZIP
-              </button>
-              <button type="button" class="settings-action ui-button" (click)="exportLegacyZip()">
-                <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
-                Export Legacy Backup
               </button>
               @if (showLegacyMigration()) {
                 <button type="button" class="settings-action ui-button" (click)="migrateLegacyDataFromSettings()">
@@ -568,8 +563,8 @@
       }
 
       @if (selectedPoint(); as point) {
-        @if (selectedPointMode() === 'view') {
-          <aside class="point-details is-view" aria-label="Lineup details" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
+        @if (selectedPointMode() === 'view' && lineupChooserOpen() && selectedResultSpotVariants().length > 1) {
+          <aside class="point-details is-view is-lineup-chooser" aria-label="Lineup variants" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
             <div
               class="panel-resize-edge is-right"
               role="separator"
@@ -577,26 +572,64 @@
               (pointerdown)="startPanelResize('right', $event)"
             ></div>
             <div class="point-details-header">
-              <span>{{ displayTitle(point) }}</span>
+              <span>Lineups</span>
               <button type="button" aria-label="Close" (click)="closePointEditor()">
                 <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
               </button>
             </div>
 
-            @if (selectedResultSpotVariants().length > 1) {
-              <div class="lineup-variant-list" aria-label="Lineup variants">
-                @for (variant of selectedResultSpotVariants(); track variant.id; let index = $index) {
-                  <button
-                    type="button"
-                    [class.is-active]="variant.id === point.id"
-                    (click)="selectLineupVariant(variant.id, $event)"
-                  >
-                    <span>{{ displayTitle(variant) }}</span>
-                    <small>{{ startPoint(variant) ? 'Start set' : 'No start' }}</small>
-                  </button>
-                }
-              </div>
-            }
+            <div class="lineup-choice-list" aria-label="Choose lineup">
+              @for (variant of selectedResultSpotVariants(); track variant.id; let index = $index) {
+                <button
+                  type="button"
+                  class="lineup-choice-card"
+                  [class.is-active]="variant.id === point.id"
+                  (click)="selectLineupVariant(variant.id, $event)"
+                >
+                  <span class="lineup-choice-copy">
+                    <strong>{{ displayTitle(variant) }}</strong>
+                    <small>{{ startPoint(variant) ? 'Start set' : 'No start point' }}</small>
+                  </span>
+                  <span class="lineup-choice-preview" [class.is-empty]="!guideSlotMedia(variant, 'start')">
+                    @if (guideSlotMedia(variant, 'start'); as media) {
+                      @if (media.type === 'image') {
+                        <img [src]="media.url" [alt]="media.name" />
+                      } @else {
+                        <video [src]="media.url" muted></video>
+                      }
+                    } @else {
+                      <em>Start</em>
+                    }
+                  </span>
+                </button>
+              }
+            </div>
+
+            <div class="lineup-detail-actions">
+              <button type="button" class="edit-button is-secondary" (click)="addLineupVariantFromSelected($event)">
+                Add lineup variant
+              </button>
+            </div>
+          </aside>
+        } @else if (selectedPointMode() === 'view') {
+          <aside class="point-details is-view" aria-label="Lineup details" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
+            <div
+              class="panel-resize-edge is-right"
+              role="separator"
+              aria-label="Resize lineup panel"
+              (pointerdown)="startPanelResize('right', $event)"
+            ></div>
+            <div class="point-details-header" [class.has-back]="selectedResultSpotVariants().length > 1">
+              @if (selectedResultSpotVariants().length > 1) {
+                <button type="button" aria-label="Back to lineups" (click)="openLineupChooser($event)">
+                  <span class="ui-icon" style="--icon-url: url('/icons/left_arrow_outline.svg')" aria-hidden="true"></span>
+                </button>
+              }
+              <span>{{ displayTitle(point) }}</span>
+              <button type="button" aria-label="Close" (click)="closePointEditor()">
+                <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
+              </button>
+            </div>
 
             <button
               class="guide-slot"
@@ -662,13 +695,15 @@
               <p class="lineup-description">{{ displayDescription(point) }}</p>
             }
 
-            <button type="button" class="edit-button" (click)="editSelectedPoint()">
-              <span class="ui-icon" style="--icon-url: url('/icons/edit_outline.svg')" aria-hidden="true"></span>
-              Edit
-            </button>
-            <button type="button" class="edit-button is-secondary" (click)="addLineupVariantFromSelected($event)">
-              Add lineup variant
-            </button>
+            <div class="lineup-detail-actions">
+              <button type="button" class="edit-button" (click)="editSelectedPoint()">
+                <span class="ui-icon" style="--icon-url: url('/icons/edit_outline.svg')" aria-hidden="true"></span>
+                Edit
+              </button>
+              <button type="button" class="edit-button is-secondary" (click)="addLineupVariantFromSelected($event)">
+                Add lineup variant
+              </button>
+            </div>
           </aside>
         } @else {
           <aside class="point-details" aria-label="Lineup editor" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
@@ -684,21 +719,6 @@
                 <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
               </button>
             </div>
-
-            @if (selectedResultSpotVariants().length > 1) {
-              <div class="lineup-variant-list" aria-label="Lineup variants">
-                @for (variant of selectedResultSpotVariants(); track variant.id; let index = $index) {
-                  <button
-                    type="button"
-                    [class.is-active]="variant.id === point.id"
-                    (click)="selectLineupVariant(variant.id, $event)"
-                  >
-                    <span>{{ displayTitle(variant) }}</span>
-                    <small>{{ startPoint(variant) ? 'Start set' : 'No start' }}</small>
-                  </button>
-                }
-              </div>
-            }
 
             <label class="field">
               <span>Title</span>

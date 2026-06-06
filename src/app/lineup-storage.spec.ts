@@ -1,4 +1,4 @@
-import { LineupStorage, StoredMap, StoredPoint } from './lineup-storage';
+import { LineupStorage, StoredMap, StoredPoint, StoredResultSpotWithLineups, WebLineupStorage } from './lineup-storage';
 import JSZip from 'jszip';
 
 describe('LineupStorage', () => {
@@ -152,6 +152,49 @@ describe('LineupStorage', () => {
     );
     expect(mediaPath.split('/').at(-1)).not.toContain(':');
     expect(zip.file(mediaPath)).toBeTruthy();
+  });
+
+  it('should keep result spots separate for different map levels', async () => {
+    const storage = new WebLineupStorage();
+    const basePoint: StoredPoint = {
+      id: 'nuke:l1:custom:1',
+      resultSpotId: 'shared-result',
+      label: '1',
+      mapId: 'nuke',
+      levelId: 'l1',
+      x: 20,
+      y: 30,
+      kind: 'custom',
+      grenadeCategoryId: 'smoke',
+      teamSide: 'ct',
+      title: 'L1 smoke',
+      description: '',
+      requirements: [],
+      trajectory: { vertices: [] },
+      media: [],
+    };
+
+    const spots = (storage as unknown as {
+      pointsToResultSpots(points: StoredPoint[]): StoredResultSpotWithLineups[];
+    }).pointsToResultSpots([
+      basePoint,
+      {
+        ...basePoint,
+        id: 'nuke:l2:custom:1',
+        levelId: 'l2',
+        title: 'L2 smoke',
+      },
+    ]);
+
+    expect(spots).toHaveLength(2);
+    expect(spots).toMatchObject([
+      { levelId: 'l1' },
+      { levelId: 'l2' },
+    ]);
+    expect(spots).toMatchObject([
+      { lineups: [expect.objectContaining({ title: 'L1 smoke' })] },
+      { lineups: [expect.objectContaining({ title: 'L2 smoke' })] },
+    ]);
   });
 
   it('should export and import custom maps with radar images', async () => {
