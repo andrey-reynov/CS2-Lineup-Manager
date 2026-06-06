@@ -8,6 +8,7 @@ set "CARGO_HOME=%ROOT%\.tools\cargo"
 set "RUSTUP_HOME=%ROOT%\.tools\rustup"
 set "NG_CLI_ANALYTICS=false"
 set "PATH=%CARGO_HOME%\bin;%NODE_DIR%;%PATH%"
+set "VERSION_FILE=%TEMP%\cs2nades-build-version.txt"
 
 cd /d "%ROOT%"
 
@@ -22,12 +23,14 @@ if errorlevel 1 (
 
 echo.
 echo [2/3] Bumping development version...
-for /f "usebackq delims=" %%V in (`"%NODE_DIR%\node.exe" "%ROOT%\scripts\bump-dev-version.mjs"`) do set "BUILD_VERSION=%%V"
+"%NODE_DIR%\node.exe" "%ROOT%\scripts\bump-dev-version.mjs" > "%VERSION_FILE%"
 if errorlevel 1 (
   echo.
   echo Auto build failed while bumping the development version.
   exit /b %errorlevel%
 )
+set /p BUILD_VERSION=<"%VERSION_FILE%"
+del "%VERSION_FILE%" >nul 2>nul
 echo Version: %BUILD_VERSION%
 
 echo.

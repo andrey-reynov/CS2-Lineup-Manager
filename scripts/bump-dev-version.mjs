@@ -8,6 +8,7 @@ const root = join(scriptDir, '..');
 const packagePath = join(root, 'package.json');
 const packageLockPath = join(root, 'package-lock.json');
 const tauriConfigPath = join(root, 'src-tauri', 'tauri.conf.json');
+const cargoTomlPath = join(root, 'src-tauri', 'Cargo.toml');
 
 async function readJson(path) {
   const content = await readFile(path, 'utf8');
@@ -16,6 +17,20 @@ async function readJson(path) {
 
 async function writeJson(path, value) {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
+async function updateCargoVersion(path, nextVersion) {
+  const content = await readFile(path, 'utf8');
+  const nextContent = content.replace(
+    /^version = "([^"]+)"$/m,
+    `version = "${nextVersion}"`,
+  );
+
+  if (nextContent === content) {
+    throw new Error(`Could not find package version in ${path}.`);
+  }
+
+  await writeFile(path, nextContent, 'utf8');
 }
 
 const tauriConfig = await readJson(tauriConfigPath);
@@ -41,6 +56,8 @@ if (!dryRun) {
 
   tauriConfig.version = nextVersion;
   await writeJson(tauriConfigPath, tauriConfig);
+
+  await updateCargoVersion(cargoTomlPath, nextVersion);
 }
 
 console.log(nextVersion);

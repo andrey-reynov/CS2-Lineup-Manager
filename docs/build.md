@@ -44,6 +44,7 @@ It updates these files together:
 package.json
 package-lock.json
 src-tauri/tauri.conf.json
+src-tauri/Cargo.toml
 ```
 
 To check the next version without changing files:
@@ -121,10 +122,11 @@ The Angular production build may currently print a non-blocking style budget war
 
 If a build fails with messages about being unable to resolve project files, `node_modules`, or `src/styles.scss`, the command may have run inside a restricted sandbox. Rerun the same command with normal filesystem access.
 
-If the installer output still has the old version, check that all three version files match:
+If the installer output still has the old version, check that the version files match:
 
 ```text
 package.json
 package-lock.json
 src-tauri/tauri.conf.json
+src-tauri/Cargo.toml
 ```

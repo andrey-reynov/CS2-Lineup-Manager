@@ -63,7 +63,7 @@
           </button>
         }
 
-        <label class="add-map-button">
+        <label class="add-map-button ui-button is-accent">
           <input type="file" accept="image/*" (change)="onCustomMapSelected($event)" />
           <span class="ui-icon" style="--icon-url: url('/icons/add_fill.svg')" aria-hidden="true"></span>
           Add custom
@@ -73,7 +73,7 @@
 
     <nav class="sidebar-footer" aria-label="Application settings">
       <button
-        class="nav-button"
+        class="nav-button ui-button is-ghost"
         type="button"
         [class.is-active]="appView() === 'settings'"
         (click)="selectSettings()"
@@ -99,39 +99,33 @@
       } @else if (appView() === 'settings') {
         <section class="settings-panel" aria-label="Settings">
           <h2>Settings</h2>
-          <section class="settings-group is-paths" aria-label="Content workspace">
-            <div>
-              <strong>Content workspace</strong>
-              <small>User-editable maps, metadata, inboxes, and media folders.</small>
-            </div>
-            @if (contentWorkspace(); as workspace) {
-              <code>{{ workspace.contentDir }}</code>
-            } @else {
-              <code>Available in the desktop app after startup.</code>
-            }
+          <p class="settings-category">UI</p>
+          <section class="settings-card" aria-label="Interface preferences">
+            <label class="settings-toggle">
+              <span>
+                <strong>Show menu scrollbar</strong>
+                <small>Reveal the scroll thumb in the maps list.</small>
+              </span>
+              <input
+                type="checkbox"
+                [checked]="showMenuScrollbar()"
+                (change)="setShowMenuScrollbar($any($event.target).checked)"
+              />
+            </label>
+            <label class="settings-toggle">
+              <span>
+                <strong>Resize panels together</strong>
+                <small>Drag either panel edge to resize both side panels.</small>
+              </span>
+              <input
+                type="checkbox"
+                [checked]="resizePanelsTogether()"
+                (change)="setResizePanelsTogether($any($event.target).checked)"
+              />
+            </label>
           </section>
-          <label class="settings-toggle">
-            <span>
-              <strong>Show menu scrollbar</strong>
-              <small>Reveal the scroll thumb in the maps list.</small>
-            </span>
-            <input
-              type="checkbox"
-              [checked]="showMenuScrollbar()"
-              (change)="setShowMenuScrollbar($any($event.target).checked)"
-            />
-          </label>
-          <label class="settings-toggle">
-            <span>
-              <strong>Resize panels together</strong>
-              <small>Drag either panel edge to resize both side panels.</small>
-            </span>
-            <input
-              type="checkbox"
-              [checked]="resizePanelsTogether()"
-              (change)="setResizePanelsTogether($any($event.target).checked)"
-            />
-          </label>
+
+          <p class="settings-category">Colors</p>
           <section class="settings-group" aria-label="Accent color">
             <div>
               <strong>Accent color</strong>
@@ -194,15 +188,34 @@
               </div>
             </div>
           </section>
-          <label class="settings-action">
-            <input type="file" accept=".zip,application/zip" (change)="importZip($event)" />
-            <span class="ui-icon" style="--icon-url: url('/icons/upload_outline.svg')" aria-hidden="true"></span>
-            Import ZIP
-          </label>
-          <button type="button" class="settings-action" (click)="exportZip()">
-            <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
-            Export ZIP
-          </button>
+
+          <p class="settings-category">Locations</p>
+          <section class="settings-group is-paths" aria-label="Content workspace">
+            <div>
+              <strong>Path / Data</strong>
+              <small>User-editable maps, metadata, inboxes, and media folders.</small>
+            </div>
+            @if (contentWorkspace(); as workspace) {
+              <code>{{ workspace.contentDir }}</code>
+            } @else {
+              <code>Available in the desktop app after startup.</code>
+            }
+          </section>
+
+          <p class="settings-category">Data</p>
+          <section class="settings-card" aria-label="Import and export data">
+            <div class="settings-action-row">
+              <label class="settings-action ui-button">
+                <input type="file" accept=".zip,application/zip" (change)="importZip($event)" />
+                <span class="ui-icon" style="--icon-url: url('/icons/upload_outline.svg')" aria-hidden="true"></span>
+                Import ZIP
+              </label>
+              <button type="button" class="settings-action ui-button" (click)="exportZip()">
+                <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
+                Export ZIP
+              </button>
+            </div>
+          </section>
           @if (importError()) {
             <p class="settings-error">{{ importError() }}</p>
           }

@@ -209,6 +209,47 @@ h2 {
   -webkit-mask-size: contain;
 }
 
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--vscode-text);
+  font: inherit;
+  font-weight: 400;
+  text-decoration: none;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ui-button:hover,
+.ui-button:focus-visible {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-control-hover);
+  border-color: var(--vscode-focus-ring);
+  outline: 0;
+}
+
+.ui-button.is-accent {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
+}
+
+.ui-button.is-accent:hover,
+.ui-button.is-accent:focus-visible {
+  background: var(--vscode-accent-hover);
+}
+
+.ui-button.is-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
 .sidebar-footer {
   display: grid;
   gap: 8px;
@@ -239,12 +280,7 @@ h2 {
   width: 100%;
   min-height: 42px;
   padding: 0 12px;
-  color: var(--vscode-text);
   text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: default;
 }
 
 .nav-button.is-muted {
@@ -254,6 +290,7 @@ h2 {
 .nav-button.is-active {
   color: var(--vscode-text-strong);
   background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
 }
 
 .nav-button.is-active .nav-icon {
@@ -487,12 +524,6 @@ h2 {
   width: 100%;
   min-height: 46px;
   margin-top: 4px;
-  color: var(--vscode-text-strong);
-  font-weight: 400;
-  background: var(--vscode-accent);
-  border: 0;
-  border-radius: 8px;
-  cursor: default;
 }
 
 .add-map-button span {
@@ -553,19 +584,8 @@ h2 {
 }
 
 .settings-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  place-items: center;
+  width: 100%;
   min-height: 44px;
-  color: var(--vscode-text-strong);
-  font: inherit;
-  font-weight: 900;
-  background: var(--vscode-accent);
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
 }
 
 .settings-action input {
@@ -576,17 +596,38 @@ h2 {
   --icon-size: 16px;
 }
 
-.settings-toggle,
+.settings-category {
+  margin: 14px 0 0;
+  color: var(--vscode-text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-card,
 .settings-group {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+}
+
+.settings-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
   min-height: 58px;
-  padding: 12px;
-  background: var(--vscode-control-bg);
-  border: 1px solid var(--vscode-border-muted);
-  border-radius: 8px;
+  padding: 0;
 }
 
 .settings-toggle span,
@@ -643,7 +684,6 @@ h2 {
 
 .settings-group {
   align-items: stretch;
-  flex-direction: column;
 }
 
 .settings-group.is-paths code {
@@ -677,8 +717,14 @@ h2 {
   gap: 6px;
   min-height: 58px;
   padding: 8px 6px;
+  color: var(--vscode-text);
+  font: inherit;
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 400;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  cursor: pointer;
 }
 
 .settings-team-colors {
@@ -695,6 +741,7 @@ h2 {
 .settings-team-colors > div > strong {
   color: var(--vscode-text-muted);
   font-size: 0.76rem;
+  font-weight: 400;
   text-transform: uppercase;
 }
 
@@ -1817,6 +1864,9 @@ h2 {
   align-items: center;
   gap: 8px;
   justify-content: center;
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
 }
 
 .point-actions .delete-button {
@@ -1829,9 +1879,9 @@ h2 {
 
 .point-actions .save-button:hover,
 .point-actions .save-button:focus-visible {
-  color: #111318;
-  background: color-mix(in srgb, #ffffff 88%, var(--vscode-accent));
-  border-color: color-mix(in srgb, #ffffff 76%, var(--vscode-focus-ring));
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent-hover);
+  border-color: var(--vscode-focus-ring);
   outline: 0;
 }
 
