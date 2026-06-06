@@ -323,69 +323,165 @@
               </div>
             }
 
-            <div class="map-bottom-rail" aria-label="Map filters and zoom">
-              <div class="side-filter" aria-label="Team side">
+            <div
+              class="map-bottom-rail"
+              [class.is-compact]="isRailCompact()"
+              aria-label="Map filters"
+            >
+              @if (isRailCompact()) {
                 <button
+                  class="rail-compact-button"
                   type="button"
-                  class="is-any-side"
-                  [class.is-active]="selectedTeamSide() === 'any'"
-                  (click)="selectTeamSide('any')"
+                  [class.is-active]="activeRailPopover() === 'team'"
+                  [attr.aria-label]="'Team filter: ' + selectedTeamOption().label"
+                  (click)="toggleRailPopover('team', $event)"
                 >
-                  <span class="rail-icon is-any-team" aria-hidden="true"></span>
-                  <small>Any</small>
-                </button>
-                @for (side of teamSideOptions; track side.id) {
-                  <button
-                    type="button"
-                    [class.is-active]="selectedTeamSide() === side.id"
-                    [class.is-ct-side]="side.id === 'ct'"
-                    [class.is-t-side]="side.id === 't'"
-                    (click)="selectTeamSide(side.id)"
-                  >
+                  @if (selectedTeamOption().isAny) {
+                    <span class="rail-icon is-any-team" aria-hidden="true"></span>
+                  } @else {
                     <span
                       class="rail-icon"
                       aria-hidden="true"
-                      [style.mask-image]="'url(' + side.iconUrl + ')'"
-                      [style.-webkit-mask-image]="'url(' + side.iconUrl + ')'"
+                      [style.mask-image]="'url(' + selectedTeamOption().iconUrl + ')'"
+                      [style.-webkit-mask-image]="'url(' + selectedTeamOption().iconUrl + ')'"
                     ></span>
-                    <small>{{ side.label }}</small>
-                  </button>
-                }
-              </div>
-              <div class="grenade-filter" aria-label="Grenade categories">
-                <button
-                  class="all-filter-button"
-                  type="button"
-                  [class.is-active]="showAllLineups()"
-                  (click)="selectAllLineups()"
-                >
-                  All
+                  }
                 </button>
-                @for (category of grenadeCategories; track category.id) {
-                  <button
-                    class="grenade-button"
-                    type="button"
-                    [class.is-active]="!showAllLineups() && selectedGrenadeCategoryId() === category.id"
-                    (click)="selectGrenadeCategory(category)"
+                <button
+                  class="rail-compact-button"
+                  type="button"
+                  [class.is-active]="activeRailPopover() === 'grenade'"
+                  [attr.aria-label]="'Grenade filter: ' + selectedGrenadeOption().label"
+                  (click)="toggleRailPopover('grenade', $event)"
+                >
+                  <span
+                    class="rail-icon"
+                    [class.is-local-icon]="selectedGrenadeOption().isLocalIcon"
+                    aria-hidden="true"
+                    [style.--icon-url]="selectedGrenadeOption().isLocalIcon ? 'url(' + selectedGrenadeOption().iconUrl + ')' : null"
+                    [style.mask-image]="selectedGrenadeOption().isLocalIcon ? null : 'url(' + selectedGrenadeOption().iconUrl + ')'"
+                    [style.-webkit-mask-image]="selectedGrenadeOption().isLocalIcon ? null : 'url(' + selectedGrenadeOption().iconUrl + ')'"
+                  ></span>
+                </button>
+
+                @if (activeRailPopover(); as popover) {
+                  <div
+                    class="rail-popover"
+                    [class.is-team]="popover === 'team'"
+                    [class.is-grenade]="popover === 'grenade'"
+                    (click)="$event.stopPropagation()"
                   >
-                    @if (category.iconUrl) {
+                    <span>{{ popover === 'team' ? 'Team side' : 'Grenade type' }}</span>
+                    <div class="rail-popover-grid">
+                      @if (popover === 'team') {
+                        @for (option of teamFilterOptions; track option.id) {
+                          <button
+                            type="button"
+                            [class.is-active]="selectedTeamSide() === option.id"
+                            [class.is-any-side]="option.id === 'any'"
+                            [class.is-ct-side]="option.id === 'ct'"
+                            [class.is-t-side]="option.id === 't'"
+                            (click)="selectTeamSide(option.id)"
+                          >
+                            @if (option.isAny) {
+                              <span class="rail-icon is-any-team" aria-hidden="true"></span>
+                            } @else {
+                              <span
+                                class="rail-icon"
+                                aria-hidden="true"
+                                [style.mask-image]="'url(' + option.iconUrl + ')'"
+                                [style.-webkit-mask-image]="'url(' + option.iconUrl + ')'"
+                              ></span>
+                            }
+                            <small>{{ option.label }}</small>
+                          </button>
+                        }
+                      } @else {
+                        @for (option of grenadeFilterOptions; track option.id) {
+                          <button
+                            type="button"
+                            [class.is-active]="isGrenadeFilterOptionActive(option)"
+                            (click)="selectGrenadeFilterOption(option)"
+                          >
+                            <span
+                              class="rail-icon"
+                              [class.is-local-icon]="option.isLocalIcon"
+                              aria-hidden="true"
+                              [style.--icon-url]="option.isLocalIcon ? 'url(' + option.iconUrl + ')' : null"
+                              [style.mask-image]="option.isLocalIcon ? null : 'url(' + option.iconUrl + ')'"
+                              [style.-webkit-mask-image]="option.isLocalIcon ? null : 'url(' + option.iconUrl + ')'"
+                            ></span>
+                            <small>{{ option.label }}</small>
+                          </button>
+                        }
+                      }
+                    </div>
+                  </div>
+                }
+              } @else {
+                <div class="side-filter" aria-label="Team side">
+                  <button
+                    type="button"
+                    class="is-any-side"
+                    [class.is-active]="selectedTeamSide() === 'any'"
+                    (click)="selectTeamSide('any')"
+                  >
+                    <span class="rail-icon is-any-team" aria-hidden="true"></span>
+                    <small>Any</small>
+                  </button>
+                  @for (side of teamSideOptions; track side.id) {
+                    <button
+                      type="button"
+                      [class.is-active]="selectedTeamSide() === side.id"
+                      [class.is-ct-side]="side.id === 'ct'"
+                      [class.is-t-side]="side.id === 't'"
+                      (click)="selectTeamSide(side.id)"
+                    >
                       <span
                         class="rail-icon"
                         aria-hidden="true"
-                        [style.mask-image]="'url(' + category.iconUrl + ')'"
-                        [style.-webkit-mask-image]="'url(' + category.iconUrl + ')'"
+                        [style.mask-image]="'url(' + side.iconUrl + ')'"
+                        [style.-webkit-mask-image]="'url(' + side.iconUrl + ')'"
                       ></span>
-                    } @else {
-                      <span
-                        class="rail-icon is-local-icon"
-                        aria-hidden="true"
-                        style="--icon-url: url('/icons/tag.svg')"
-                      ></span>
-                    }
-                    <small>{{ category.label }}</small>
+                      <small>{{ side.label }}</small>
+                    </button>
+                  }
+                </div>
+                <div class="grenade-filter" aria-label="Grenade categories">
+                  <button
+                    class="all-filter-button"
+                    type="button"
+                    [class.is-active]="showAllLineups()"
+                    (click)="selectAllLineups()"
+                  >
+                    All
                   </button>
-                }
-              </div>
+                  @for (category of grenadeCategories; track category.id) {
+                    <button
+                      class="grenade-button"
+                      type="button"
+                      [class.is-active]="!showAllLineups() && selectedGrenadeCategoryId() === category.id"
+                      (click)="selectGrenadeCategory(category)"
+                    >
+                      @if (category.iconUrl) {
+                        <span
+                          class="rail-icon"
+                          aria-hidden="true"
+                          [style.mask-image]="'url(' + category.iconUrl + ')'"
+                          [style.-webkit-mask-image]="'url(' + category.iconUrl + ')'"
+                        ></span>
+                      } @else {
+                        <span
+                          class="rail-icon is-local-icon"
+                          aria-hidden="true"
+                          style="--icon-url: url('/icons/tag.svg')"
+                        ></span>
+                      }
+                      <small>{{ category.label }}</small>
+                    </button>
+                  }
+                </div>
+              }
             </div>
 
             @if (pointActionMenu(); as menu) {

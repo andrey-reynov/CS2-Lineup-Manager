@@ -63,6 +63,20 @@ type TeamSideOption = {
   iconUrl: string;
 };
 
+type TeamFilterOption = {
+  id: TeamSideFilter;
+  label: string;
+  iconUrl?: string;
+  isAny?: boolean;
+};
+
+type GrenadeFilterOption = {
+  id: GrenadeCategoryId | 'all';
+  label: string;
+  iconUrl?: string;
+  isLocalIcon?: boolean;
+};
+
 type DragState = {
   pointerId: number;
   startClientX: number;
@@ -87,6 +101,7 @@ type PointActionMenu = {
 type AppView = 'home' | 'map' | 'settings';
 type PointMode = 'view' | 'edit';
 type TeamSideFilter = TeamSide | 'any';
+type RailPopover = 'team' | 'grenade';
 type TrajectoryEditMode = 'create' | 'edit';
 type TrajectoryDragTarget =
   | { type: 'result'; pointId: string }
@@ -194,12 +209,27 @@ const TEAM_SIDE_OPTIONS: TeamSideOption[] = [
   },
 ];
 
+const TEAM_FILTER_OPTIONS: TeamFilterOption[] = [
+  { id: 'any', label: 'Any', isAny: true },
+  ...TEAM_SIDE_OPTIONS,
+];
+
+const GRENADE_FILTER_OPTIONS: GrenadeFilterOption[] = [
+  { id: 'all', label: 'All', iconUrl: '/icons/tag.svg', isLocalIcon: true },
+  ...GRENADE_CATEGORIES,
+];
+
 const POINT_ACTION_MENU_WIDTH = 200;
 const POINT_ACTION_MENU_HEIGHT = 216;
 const POINT_ACTION_MENU_GAP = 10;
 const POINT_ACTION_MENU_EDGE_PADDING = 8;
 const SHOW_MENU_SCROLLBAR_STORAGE_KEY = 'cs2nades:show-menu-scrollbar';
 const USER_SETTINGS_STORAGE_KEY = 'cs2nades:user-settings';
+const FULL_RAIL_REQUIRED_WIDTH = 520;
+const RAIL_COMPACT_SAFETY_MARGIN = 16;
+const MAP_STAGE_GUTTER = 36;
+const COMPACT_RAIL_VIEWPORT_WIDTH = 920;
+const AUTO_COLLAPSE_NAV_VIEWPORT_WIDTH = 920;
 const ACCENT_COLOR_OPTIONS: AccentColorOption[] = [
   {
     id: 'blue',
@@ -483,6 +513,8 @@ export class App {
   protected readonly maps = signal<TacticalMap[]>(DEFAULT_MAPS);
   protected readonly grenadeCategories = GRENADE_CATEGORIES;
   protected readonly teamSideOptions = TEAM_SIDE_OPTIONS;
+  protected readonly teamFilterOptions = TEAM_FILTER_OPTIONS;
+  protected readonly grenadeFilterOptions = GRENADE_FILTER_OPTIONS;
   protected readonly accentColorOptions = ACCENT_COLOR_OPTIONS;
   protected readonly teamCtColorOptions = TEAM_CT_COLOR_OPTIONS;
   protected readonly teamTColorOptions = TEAM_T_COLOR_OPTIONS;
@@ -495,6 +527,8 @@ export class App {
   protected readonly selectedGrenadeCategoryId = signal(GRENADE_CATEGORIES[0].id);
   protected readonly selectedTeamSide = signal<TeamSideFilter>('any');
   protected readonly showAllLineups = signal(false);
+  protected readonly isRailCompact = signal(false);
+  protected readonly activeRailPopover = signal<RailPopover | null>(null);
   protected readonly addedPoints = signal<Record<string, MapPoint[]>>({});
   protected readonly draftPoint = signal<MapPoint | null>(null);
   protected readonly markerCounters = signal<Record<string, number>>({});
@@ -697,14 +731,20 @@ export class App {
     this.resetMapView();
     this.closePointEditor();
     this.draftPoint.set(null);
+    if (this.shouldAutoCollapseSidebar()) {
+      this.sidebarOpen.set(false);
+    }
+    this.updateRailCompactMode();
   }
 
   protected openSidebar(): void {
     this.sidebarOpen.set(true);
+    this.updateRailCompactMode();
   }
 
   protected closeSidebar(): void {
     this.sidebarOpen.set(false);
+    this.updateRailCompactMode();
   }
 
   protected selectSettings(): void {
@@ -762,18 +802,21 @@ export class App {
     this.cancelTrajectoryInteraction();
     this.showAllLineups.set(false);
     this.selectedGrenadeCategoryId.set(category.id);
+    this.closeRailPopover();
     this.closePointEditor();
   }
 
   protected selectTeamSide(teamSide: TeamSideFilter): void {
     this.cancelTrajectoryInteraction();
     this.selectedTeamSide.set(teamSide);
+    this.closeRailPopover();
     this.closePointEditor();
   }
 
   protected selectAllLineups(): void {
     this.cancelTrajectoryInteraction();
     this.showAllLineups.set(true);
+    this.closeRailPopover();
     this.closePointEditor();
   }
 
@@ -822,6 +865,47 @@ export class App {
   protected currentTeamTColor(): TeamColorOption<TeamTColorId> {
     return TEAM_T_COLOR_OPTIONS.find((option) => option.id === this.userSettings().teamTColorId)
       ?? TEAM_T_COLOR_OPTIONS[0];
+  }
+
+  protected selectedTeamOption(): TeamFilterOption {
+    return this.teamFilterOptions.find((option) => option.id === this.selectedTeamSide())
+      ?? this.teamFilterOptions[0];
+  }
+
+  protected selectedGrenadeOption(): GrenadeFilterOption {
+    if (this.showAllLineups()) {
+      return this.grenadeFilterOptions[0];
+    }
+
+    return this.grenadeFilterOptions.find((option) => option.id === this.selectedGrenadeCategoryId())
+      ?? this.grenadeFilterOptions[0];
+  }
+
+  protected isGrenadeFilterOptionActive(option: GrenadeFilterOption): boolean {
+    return option.id === 'all'
+      ? this.showAllLineups()
+      : !this.showAllLineups() && this.selectedGrenadeCategoryId() === option.id;
+  }
+
+  protected toggleRailPopover(popover: RailPopover, event: MouseEvent): void {
+    event.stopPropagation();
+    this.activeRailPopover.update((activePopover) => activePopover === popover ? null : popover);
+  }
+
+  protected closeRailPopover(): void {
+    this.activeRailPopover.set(null);
+  }
+
+  protected selectGrenadeFilterOption(option: GrenadeFilterOption): void {
+    if (option.id === 'all') {
+      this.selectAllLineups();
+      return;
+    }
+
+    const category = this.grenadeCategories.find((grenadeCategory) => grenadeCategory.id === option.id);
+    if (category) {
+      this.selectGrenadeCategory(category);
+    }
   }
 
   protected startPanelResize(side: PanelSide, event: PointerEvent): void {
@@ -1019,6 +1103,7 @@ export class App {
       this.selectedTrajectoryVertexId.set(null);
       this.draftTrajectoryVertex.set(null);
       this.closePointActionMenu();
+      this.updateRailCompactMode();
       return;
     }
 
@@ -1046,6 +1131,7 @@ export class App {
     this.resetPreviewView();
     this.draggedMediaId.set(null);
     this.selectedMediaId.set(null);
+    this.updateRailCompactMode();
   }
 
   protected closePointActionMenu(): void {
@@ -1155,6 +1241,7 @@ export class App {
     });
     this.selectedPointId.set(pointId);
     this.selectedPointMode.set('edit');
+    this.updateRailCompactMode();
     this.trajectoryEditMode.set('create');
     this.selectedTrajectoryVertexId.set(null);
     this.draftPoint.set(null);
@@ -1694,6 +1781,12 @@ export class App {
 
   @HostListener('window:keydown', ['$event'])
   protected onKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && this.activeRailPopover()) {
+      event.preventDefault();
+      this.closeRailPopover();
+      return;
+    }
+
     if (this.previewMedia()) {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -1745,6 +1838,19 @@ export class App {
     }
   }
 
+  @HostListener('window:resize')
+  protected onWindowResize(): void {
+    this.updateRailCompactMode();
+  }
+
+  @HostListener('window:click', ['$event'])
+  protected onWindowClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.map-bottom-rail')) {
+      this.closeRailPopover();
+    }
+  }
+
   @HostListener('window:pointermove', ['$event'])
   protected onWindowPointerMove(event: PointerEvent): void {
     const resizeState = this.panelResizeState;
@@ -1768,6 +1874,7 @@ export class App {
         leftPanelWidth: resizedWidth,
         rightPanelWidth: resizedWidth,
       }));
+      this.updateRailCompactMode();
       return;
     }
 
@@ -1777,6 +1884,7 @@ export class App {
         ? { leftPanelWidth: resizedWidth }
         : { rightPanelWidth: resizedWidth }),
     }));
+    this.updateRailCompactMode();
   }
 
   @HostListener('window:pointerup', ['$event'])
@@ -1788,6 +1896,7 @@ export class App {
 
     this.panelResizeState = null;
     this.saveUserSettings(this.userSettings());
+    this.updateRailCompactMode();
   }
 
   private addPointFromBoardEvent(event: MouseEvent, board: HTMLElement): MapPoint | null {
@@ -2159,6 +2268,37 @@ export class App {
   private selectedConcreteTeamSide(): TeamSide {
     const selectedTeamSide = this.selectedTeamSide();
     return selectedTeamSide === 'any' ? 'ct' : selectedTeamSide;
+  }
+
+  private updateRailCompactMode(): void {
+    const useCompactRail = this.shouldUseCompactRail();
+    this.isRailCompact.set(useCompactRail);
+    if (!useCompactRail) {
+      this.closeRailPopover();
+    }
+  }
+
+  private shouldAutoCollapseSidebar(): boolean {
+    return this.viewportWidth() < AUTO_COLLAPSE_NAV_VIEWPORT_WIDTH || this.shouldUseCompactRail();
+  }
+
+  private shouldUseCompactRail(): boolean {
+    if (this.viewportWidth() < COMPACT_RAIL_VIEWPORT_WIDTH) {
+      return true;
+    }
+
+    const availableWidth = this.availableRailWidth();
+    return availableWidth < FULL_RAIL_REQUIRED_WIDTH + RAIL_COMPACT_SAFETY_MARGIN;
+  }
+
+  private availableRailWidth(): number {
+    const leftReservedWidth = this.sidebarOpen() ? this.leftPanelWidth() + MAP_STAGE_GUTTER : MAP_STAGE_GUTTER;
+    const rightReservedWidth = this.selectedPoint() ? this.rightPanelWidth() + MAP_STAGE_GUTTER : MAP_STAGE_GUTTER;
+    return this.viewportWidth() - leftReservedWidth - rightReservedWidth;
+  }
+
+  private viewportWidth(): number {
+    return globalThis.innerWidth || 1024;
   }
 
   private updateSelectedPoint(patch: Partial<MapPoint>, options: { save?: boolean } = {}): void {

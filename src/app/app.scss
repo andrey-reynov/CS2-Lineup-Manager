@@ -1022,15 +1022,15 @@ h2 {
 
 .map-bottom-rail {
   position: absolute;
-  right: calc(var(--right-panel-width) + 36px);
   left: calc(var(--left-panel-width) + 36px);
+  right: 36px;
   bottom: 18px;
   z-index: 7;
   display: flex;
   align-items: center;
   gap: 8px;
   width: max-content;
-  max-width: calc(100vw - var(--left-panel-width) - var(--right-panel-width) - 90px);
+  max-width: calc(100vw - 72px);
   margin-inline: auto;
   overflow: visible;
   scrollbar-width: none;
@@ -1040,6 +1040,23 @@ h2 {
   border-radius: 10px;
   box-shadow: 0 18px 48px var(--vscode-shadow);
   backdrop-filter: blur(16px);
+}
+
+.app-shell.is-sidebar-closed .map-bottom-rail:not(.is-compact) {
+  left: 36px;
+}
+
+.map-stage.has-point-details .map-bottom-rail:not(.is-compact) {
+  right: calc(var(--right-panel-width) + 36px);
+}
+
+.map-bottom-rail.is-compact {
+  left: 50%;
+  right: auto;
+  gap: 6px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  transform: translateX(-50%);
 }
 
 .map-bottom-rail::-webkit-scrollbar {
@@ -1052,6 +1069,90 @@ h2 {
   gap: 6px;
   padding-right: 8px;
   border-right: 1px solid var(--vscode-border-muted);
+}
+
+.rail-compact-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  color: var(--vscode-text);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.rail-compact-button.is-active,
+.rail-compact-button:hover {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent-soft);
+  border-color: var(--vscode-focus-ring);
+}
+
+.rail-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 9;
+  display: grid;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 10px;
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 92%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px var(--vscode-shadow);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+}
+
+.rail-popover > span {
+  color: var(--vscode-text-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.rail-popover-grid {
+  display: flex;
+  gap: 6px;
+}
+
+.rail-popover-grid button {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
+  padding: 6px;
+  color: var(--vscode-text);
+  font: inherit;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.rail-popover-grid button.is-active,
+.rail-popover-grid button:hover {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
+}
+
+.rail-popover-grid small {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.66rem;
+  font-weight: 400;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .all-filter-button {
@@ -1102,6 +1203,8 @@ h2 {
 
 .side-filter button.is-ct-side.is-active,
 .side-filter button.is-ct-side:hover,
+.rail-popover-grid button.is-ct-side.is-active,
+.rail-popover-grid button.is-ct-side:hover,
 .toggle-grid button.is-ct-side.is-active,
 .toggle-grid button.is-ct-side:hover {
   background: color-mix(in srgb, var(--team-ct) 34%, var(--vscode-control-bg));
@@ -1110,6 +1213,8 @@ h2 {
 
 .side-filter button.is-t-side.is-active,
 .side-filter button.is-t-side:hover,
+.rail-popover-grid button.is-t-side.is-active,
+.rail-popover-grid button.is-t-side:hover,
 .toggle-grid button.is-t-side.is-active,
 .toggle-grid button.is-t-side:hover {
   background: color-mix(in srgb, var(--team-t) 34%, var(--vscode-control-bg));
@@ -1117,7 +1222,9 @@ h2 {
 }
 
 .side-filter button.is-any-side.is-active,
-.side-filter button.is-any-side:hover {
+.side-filter button.is-any-side:hover,
+.rail-popover-grid button.is-any-side.is-active,
+.rail-popover-grid button.is-any-side:hover {
   background:
     linear-gradient(
       135deg,

@@ -53,6 +53,14 @@ function setSurfaceRect(board: Element, rect: Pick<DOMRect, 'left' | 'top' | 'wi
   });
 }
 
+function setWindowWidth(width: number): void {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    value: width,
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
 async function createLineup(fixture: ReturnType<typeof TestBed.createComponent<App>>): Promise<HTMLElement> {
   fixture.detectChanges();
   await fixture.whenStable();
@@ -73,6 +81,7 @@ async function createLineup(fixture: ReturnType<typeof TestBed.createComponent<A
 
 describe('App', () => {
   beforeEach(async () => {
+    setWindowWidth(1280);
     await TestBed.configureTestingModule({
       imports: [App],
     }).compileComponents();
@@ -222,6 +231,119 @@ describe('App', () => {
     expect(compiled.querySelector('.map-bottom-rail .zoom-controls')).toBeFalsy();
     expect(Array.from(compiled.querySelectorAll('.side-filter button')).map((button) => button.textContent?.trim()))
       .toEqual(['Any', 'CT', 'T']);
+  });
+
+  it('should render compact bottom rail controls when the center workspace is narrow', async () => {
+    setWindowWidth(560);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.map-bottom-rail')?.classList.contains('is-compact')).toBe(true);
+    expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(2);
+    expect(compiled.querySelector('.side-filter')).toBeFalsy();
+    expect(compiled.querySelector('.grenade-filter')).toBeFalsy();
+  });
+
+  it('should keep the bottom rail compact in a narrow viewport after the sidebar collapses', async () => {
+    setWindowWidth(860);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(true);
+    expect(compiled.querySelector('.map-bottom-rail')?.classList.contains('is-compact')).toBe(true);
+    expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(2);
+  });
+
+  it('should update team filter from the compact rail popover', async () => {
+    setWindowWidth(560);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (compiled.querySelector('.rail-compact-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.rail-popover.is-team')).toBeTruthy();
+
+    (Array.from(compiled.querySelectorAll('.rail-popover-grid button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'T')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(app.selectedTeamSide()).toBe('t');
+    expect(compiled.querySelector('.rail-popover')).toBeFalsy();
+  });
+
+  it('should update grenade filter from the compact rail popover', async () => {
+    setWindowWidth(560);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (compiled.querySelectorAll('.rail-compact-button')[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.rail-popover.is-grenade')).toBeTruthy();
+
+    (Array.from(compiled.querySelectorAll('.rail-popover-grid button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'Smoke')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(app.showAllLineups()).toBe(false);
+    expect(app.selectedGrenadeCategoryId()).toBe('smoke');
+    expect(compiled.querySelector('.rail-popover')).toBeFalsy();
+  });
+
+  it('should close compact rail popovers with Escape', async () => {
+    setWindowWidth(560);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (compiled.querySelector('.rail-compact-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.rail-popover')).toBeTruthy();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.rail-popover')).toBeFalsy();
+  });
+
+  it('should auto-collapse the navigation after selecting a map in compact-width conditions', async () => {
+    setWindowWidth(560);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(true);
   });
 
   it('should hide menu scrollbar by default and reveal it from settings', async () => {
