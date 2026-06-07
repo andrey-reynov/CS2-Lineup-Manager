@@ -63,11 +63,11 @@
           </button>
         }
 
-        <label class="add-map-button lineup-choice-card playlist-create-card">
+        <label class="add-map-button playlist-create-card">
           <input type="file" accept="image/*" (change)="onCustomMapSelected($event)" />
           <span class="lineup-choice-copy">
             <strong>Add custom</strong>
-            <small>Import a radar image from your computer</small>
+            <small>Add your custom map and lineups</small>
           </span>
         </label>
       </div>
@@ -123,6 +123,17 @@
                 type="checkbox"
                 [checked]="resizePanelsTogether()"
                 (change)="setResizePanelsTogether($any($event.target).checked)"
+              />
+            </label>
+            <label class="settings-toggle">
+              <span>
+                <strong>Performance logging</strong>
+                <small>Log slow saves, loading, pan/zoom, and main-thread stalls to the console.</small>
+              </span>
+              <input
+                type="checkbox"
+                [checked]="performanceLogging()"
+                (change)="setPerformanceLogging($any($event.target).checked)"
               />
             </label>
           </section>
@@ -240,6 +251,7 @@
             (click)="onBoardClick($event)"
             (contextmenu)="onBoardContextMenu($event)"
             (wheel)="onBoardWheel($event)"
+            (dragstart)="onBoardNativeDragStart($event)"
           >
             <div class="map-surface">
               <div
@@ -250,6 +262,7 @@
                   class="map-image"
                   [src]="level.imageUrl"
                   [alt]="map.name + ' radar, ' + level.name"
+                  draggable="false"
                 />
               </div>
 
@@ -560,8 +573,8 @@
                   [style.top.px]="menu.y"
                   (click)="$event.stopPropagation()"
                 >
+                  <button type="button" class="text-action-button" (click)="addLineupVariantFromSelected($event)">Add lineup variant</button>
                   <button type="button" (click)="editSelectedPoint(); closePointActionMenu()">Edit result spot</button>
-                  <button type="button" (click)="addLineupVariantFromSelected($event)">Add lineup variant</button>
                 </div>
               } @else {
                 <div
@@ -644,9 +657,6 @@
                 <span class="lineup-choice-copy">
                   <strong>Create playlist</strong>
                   <small>Create a list of lineups for easier filtering</small>
-                </span>
-                <span class="lineup-choice-preview is-empty">
-                  <em>New</em>
                 </span>
               </button>
             </div>
@@ -830,7 +840,7 @@
             </div>
 
             <div class="lineup-choice-list" aria-label="Choose lineup">
-              @for (variant of selectedResultSpotVariants(); track variant.id; let index = $index) {
+              @for (variant of selectedResultSpotVariants(); track variant.id) {
                 <button
                   type="button"
                   class="lineup-choice-card"
@@ -839,10 +849,16 @@
                 >
                   <span class="lineup-choice-copy">
                     <strong>{{ displayTitle(variant) }}</strong>
-                    <small>{{ startPoint(variant) ? 'Start set' : 'No start point' }}</small>
+                    <small>{{ displayDescription(variant) || 'No description' }}</small>
                   </span>
-                  <span class="lineup-choice-preview" [class.is-empty]="!guideSlotMedia(variant, 'start')">
-                    @if (guideSlotMedia(variant, 'start'); as media) {
+                  <span
+                    class="lineup-choice-preview"
+                    [class.is-empty]="variant.mediaLoaded && !guideSlotMedia(variant, 'start')"
+                    [class.is-loading]="!variant.mediaLoaded"
+                  >
+                    @if (!variant.mediaLoaded) {
+                      <span class="skeleton-block" aria-hidden="true"></span>
+                    } @else if (guideSlotMedia(variant, 'start'); as media) {
                       @if (media.type === 'image') {
                         <img [src]="media.url" [alt]="media.name" />
                       } @else {
@@ -853,19 +869,23 @@
                     }
                   </span>
                 </button>
+              } @empty {
+                @for (item of skeletonCards; track item) {
+                  <div class="lineup-choice-card is-skeleton" aria-hidden="true">
+                    <span class="lineup-choice-copy">
+                      <span class="skeleton-block is-title"></span>
+                      <span class="skeleton-block is-copy"></span>
+                    </span>
+                    <span class="lineup-choice-preview is-loading">
+                      <span class="skeleton-block"></span>
+                    </span>
+                  </div>
+                }
               }
             </div>
 
-            @if (selectedPointIsHydrating()) {
-              <div class="lineup-skeleton" aria-label="Loading lineup details">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            }
-
             <div class="lineup-detail-actions">
-              <button type="button" class="edit-button is-secondary" (click)="addLineupVariantFromSelected($event)">
+              <button type="button" class="text-action-button" (click)="addLineupVariantFromSelected($event)">
                 Add lineup variant
               </button>
             </div>
@@ -884,31 +904,30 @@
                   <span class="ui-icon" style="--icon-url: url('/icons/left_arrow_outline.svg')" aria-hidden="true"></span>
                 </button>
               }
-              <span>{{ displayTitle(point) }}</span>
+              @if (!point.detailsLoaded) {
+                <span class="point-title-skeleton skeleton-block" aria-hidden="true"></span>
+              } @else {
+                <span>{{ displayTitle(point) }}</span>
+              }
               <button type="button" aria-label="Close" (click)="closePointEditor()">
                 <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
               </button>
             </div>
 
-            @if (selectedPointIsHydrating()) {
-              <div class="lineup-skeleton" aria-label="Loading lineup details">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            }
-
             <button
               class="guide-slot"
               type="button"
-              [class.is-empty]="!selectedPointStartMedia()"
+              [class.is-empty]="point.mediaLoaded && !selectedPointStartMedia()"
+              [class.is-loading]="!point.mediaLoaded"
               (dragover)="onGuideRoleDragOver($event)"
               (drop)="onGuideRoleDrop('start', $event)"
               (click)="selectedPointStartMedia() && openMediaPreview(selectedPointStartMedia()!)"
               (mousemove)="updateGuidePreviewFocus($event)"
             >
               <small>Start</small>
-              @if (selectedPointStartMedia(); as media) {
+              @if (!point.mediaLoaded) {
+                <span class="guide-slot-skeleton skeleton-block" aria-hidden="true"></span>
+              } @else if (selectedPointStartMedia(); as media) {
                 @if (media.type === 'image') {
                   <img [src]="media.url" [alt]="media.name" />
                 } @else {
@@ -917,37 +936,42 @@
               } @else {
                 <span>No start screenshot</span>
               }
-              <div class="guide-throw-overlay">
-                <em>{{ selectedPointMovementText() || 'None' }}</em>
-                @if (selectedPointMouseRequirement(); as mouseRequirement) {
-                  <strong>
-                    <span
-                      class="mouse-icon"
-                      [class.is-left]="mouseRequirement.mouseButtons === 'left'"
-                      [class.is-right]="mouseRequirement.mouseButtons === 'right'"
-                      [class.is-both]="mouseRequirement.mouseButtons === 'both'"
-                      aria-hidden="true"
-                    >
-                      <span></span>
-                      <span></span>
-                    </span>
-                    {{ mouseRequirement.label }}
-                  </strong>
-                }
-              </div>
+              @if (point.mediaLoaded && point.detailsLoaded) {
+                <div class="guide-throw-overlay">
+                  <em>{{ selectedPointMovementText() || 'None' }}</em>
+                  @if (selectedPointMouseRequirement(); as mouseRequirement) {
+                    <strong>
+                      <span
+                        class="mouse-icon"
+                        [class.is-left]="mouseRequirement.mouseButtons === 'left'"
+                        [class.is-right]="mouseRequirement.mouseButtons === 'right'"
+                        [class.is-both]="mouseRequirement.mouseButtons === 'both'"
+                        aria-hidden="true"
+                      >
+                        <span></span>
+                        <span></span>
+                      </span>
+                      {{ mouseRequirement.label }}
+                    </strong>
+                  }
+                </div>
+              }
             </button>
 
             <button
               class="guide-slot"
               type="button"
-              [class.is-empty]="!selectedPointResultMedia()"
+              [class.is-empty]="point.mediaLoaded && !selectedPointResultMedia()"
+              [class.is-loading]="!point.mediaLoaded"
               (dragover)="onGuideRoleDragOver($event)"
               (drop)="onGuideRoleDrop('result', $event)"
               (click)="selectedPointResultMedia() && openMediaPreview(selectedPointResultMedia()!)"
               (mousemove)="updateGuidePreviewFocus($event)"
             >
               <small>Result</small>
-              @if (selectedPointResultMedia(); as media) {
+              @if (!point.mediaLoaded) {
+                <span class="guide-slot-skeleton skeleton-block" aria-hidden="true"></span>
+              } @else if (selectedPointResultMedia(); as media) {
                 @if (media.type === 'image') {
                   <img [src]="media.url" [alt]="media.name" />
                 } @else {
@@ -958,17 +982,22 @@
               }
             </button>
 
-            @if (selectedPointDescription()) {
+            @if (!point.detailsLoaded) {
+              <p class="lineup-description is-skeleton" aria-hidden="true">
+                <span class="skeleton-block"></span>
+                <span class="skeleton-block"></span>
+              </p>
+            } @else if (selectedPointDescription()) {
               <p class="lineup-description">{{ selectedPointDescription() }}</p>
             }
 
             <div class="lineup-detail-actions">
+              <button type="button" class="text-action-button" (click)="addLineupVariantFromSelected($event)">
+                Add lineup variant
+              </button>
               <button type="button" class="edit-button" (click)="editSelectedPoint()">
                 <span class="ui-icon" style="--icon-url: url('/icons/edit_outline.svg')" aria-hidden="true"></span>
                 Edit
-              </button>
-              <button type="button" class="edit-button is-secondary" (click)="addLineupVariantFromSelected($event)">
-                Add lineup variant
               </button>
             </div>
           </aside>

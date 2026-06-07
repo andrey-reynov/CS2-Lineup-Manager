@@ -663,7 +663,8 @@ h2 {
   gap: 10px;
 }
 
-.lineup-choice-card {
+.lineup-choice-card,
+.add-map-button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 108px;
   align-items: stretch;
@@ -687,13 +688,16 @@ h2 {
 
 .lineup-choice-card:hover,
 .lineup-choice-card:focus-visible,
-.lineup-choice-card.is-active {
+.lineup-choice-card.is-active,
+.add-map-button:hover,
+.add-map-button:focus-within {
   border-color: var(--vscode-focus-ring);
   box-shadow: 0 10px 28px color-mix(in srgb, var(--vscode-shadow) 68%, transparent);
   outline: 0;
 }
 
-.lineup-choice-card:active {
+.lineup-choice-card:active,
+.add-map-button:active {
   transform: translateY(1px);
 }
 
@@ -709,6 +713,13 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.playlist-create-card .lineup-choice-copy strong,
+.playlist-create-card .lineup-choice-copy small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .lineup-choice-copy strong {
@@ -731,6 +742,16 @@ h2 {
   min-height: 68px;
   color: var(--vscode-text-muted);
   background: color-mix(in srgb, var(--vscode-control-bg) 84%, black);
+  border-radius: 6px;
+}
+
+.lineup-choice-preview.is-loading {
+  padding: 0;
+}
+
+.lineup-choice-preview .skeleton-block {
+  width: 100%;
+  height: 100%;
   border-radius: 6px;
 }
 
@@ -809,6 +830,7 @@ h2 {
 }
 
 .playlist-create-card {
+  grid-template-columns: minmax(0, 1fr);
   background: color-mix(in srgb, var(--vscode-control-bg) 76%, transparent);
   border-style: dashed;
 }
@@ -1872,6 +1894,12 @@ h2 {
   --icon-size: 15px;
 }
 
+.point-details-header .point-title-skeleton {
+  width: min(62%, 190px);
+  height: 16px;
+  min-width: 120px;
+}
+
 .is-lineup-chooser .lineup-choice-list {
   min-height: 0;
   overflow: auto;
@@ -1880,13 +1908,8 @@ h2 {
 
 .lineup-detail-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: auto;
-}
-
-.is-lineup-chooser .lineup-detail-actions {
-  grid-template-columns: 1fr;
 }
 
 .lineup-skeleton {
@@ -1895,9 +1918,9 @@ h2 {
   padding: 2px 0;
 }
 
+.skeleton-block,
 .lineup-skeleton span {
   display: block;
-  height: 12px;
   overflow: hidden;
   background: linear-gradient(
     90deg,
@@ -1910,12 +1933,34 @@ h2 {
   animation: skeleton-shimmer 1150ms ease-in-out infinite;
 }
 
+.lineup-skeleton span {
+  height: 12px;
+}
+
 .lineup-skeleton span:nth-child(2) {
   width: 78%;
 }
 
 .lineup-skeleton span:nth-child(3) {
   width: 52%;
+}
+
+.lineup-choice-card.is-skeleton {
+  pointer-events: none;
+}
+
+.lineup-choice-card.is-skeleton .lineup-choice-copy {
+  gap: 9px;
+}
+
+.lineup-choice-card.is-skeleton .skeleton-block.is-title {
+  width: 68%;
+  height: 14px;
+}
+
+.lineup-choice-card.is-skeleton .skeleton-block.is-copy {
+  width: 92%;
+  height: 11px;
 }
 
 .field {
@@ -1953,6 +1998,11 @@ h2 {
   cursor: default;
 }
 
+.guide-slot.is-loading {
+  border-style: solid;
+  cursor: progress;
+}
+
 .guide-slot small {
   position: absolute;
   top: 8px;
@@ -1973,6 +2023,13 @@ h2 {
   color: var(--vscode-text-muted);
   font-size: 0.82rem;
   text-align: center;
+}
+
+.guide-slot > .guide-slot-skeleton {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
 }
 
 .guide-slot img,
@@ -2068,6 +2125,20 @@ h2 {
   border-radius: 8px;
 }
 
+.lineup-description.is-skeleton {
+  display: grid;
+  gap: 8px;
+}
+
+.lineup-description.is-skeleton .skeleton-block {
+  width: 100%;
+  height: 11px;
+}
+
+.lineup-description.is-skeleton .skeleton-block:nth-child(2) {
+  width: 64%;
+}
+
 .edit-button {
   display: flex;
   align-items: center;
@@ -2082,6 +2153,27 @@ h2 {
   border: 0;
   border-radius: 8px;
   cursor: pointer;
+}
+
+.text-action-button {
+  min-height: 24px;
+  padding: 0;
+  color: var(--vscode-text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 400;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.text-action-button:hover,
+.text-action-button:focus-visible {
+  color: var(--vscode-text-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: 0;
 }
 
 .edit-button .ui-icon,
@@ -2491,6 +2583,23 @@ h2 {
   color: var(--vscode-text-strong);
   background: var(--vscode-accent);
   border-color: var(--vscode-focus-ring);
+}
+
+.trajectory-context-menu .text-action-button,
+.trajectory-context-menu .text-action-button:hover,
+.trajectory-context-menu .text-action-button:focus-visible {
+  min-height: 24px;
+  color: var(--vscode-text-muted);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.trajectory-context-menu .text-action-button:hover,
+.trajectory-context-menu .text-action-button:focus-visible {
+  color: var(--vscode-text-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .media-context-menu button.is-delete:hover,

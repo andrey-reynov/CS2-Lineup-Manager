@@ -439,7 +439,7 @@ describe('ImageEditorComponent', () => {
     const saves: ImageEditorSave[] = [];
     fixture.componentInstance.save.subscribe((result) => saves.push(result));
 
-    (fixture.nativeElement.querySelector('.image-editor-header .is-accent') as HTMLButtonElement).click();
+    (fixture.nativeElement.querySelector('[aria-label="Save image"]') as HTMLButtonElement).click();
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.image-editor-save-menu button') as HTMLButtonElement).click();
     await fixture.whenStable();
@@ -451,6 +451,19 @@ describe('ImageEditorComponent', () => {
       mimeType: 'image/png',
     });
     expect(saves[0].blob.type).toBe('image/png');
+  });
+
+  it('should keep the save choices menu above the edited image layer', async () => {
+    const fixture = await createEditor();
+
+    (fixture.nativeElement.querySelector('[aria-label="Save image"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const headerZIndex = Number.parseInt(getComputedStyle(fixture.nativeElement.querySelector('.image-editor-header')).zIndex, 10);
+    const stageZIndex = Number.parseInt(getComputedStyle(fixture.nativeElement.querySelector('.image-editor-stage')).zIndex || '0', 10);
+
+    expect(headerZIndex).toBeGreaterThan(stageZIndex);
+    expect(fixture.nativeElement.querySelector('.image-editor-save-menu')).toBeTruthy();
   });
 
   it('should cancel from Escape without changing annotations', async () => {

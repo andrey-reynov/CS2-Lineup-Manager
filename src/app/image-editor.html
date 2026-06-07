@@ -13,7 +13,9 @@
               <button type="button" (click)="saveImage('replace')">Replace original</button>
             </div>
           }
-          <button type="button" class="ui-button is-accent" [disabled]="isLoading" (click)="requestSave()">Save</button>
+          <button type="button" class="image-editor-icon-button" aria-label="Save image" title="Save" [disabled]="isLoading" (click)="requestSave()">
+            <span class="ui-icon" style="--icon-url: url('/icons/save_fill.svg')" aria-hidden="true"></span>
+          </button>
         </div>
         <button type="button" class="image-editor-icon-button" aria-label="Close editor" (click)="cancel.emit()">
           <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>

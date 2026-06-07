@@ -293,6 +293,52 @@ describe('LineupStorage', () => {
     expect(await imported.maps[0].imageBlob.text()).toBe('radar-bytes');
   });
 
+  it('should preserve reused shared media attachments after web import replacement', async () => {
+    if (typeof globalThis.indexedDB === 'undefined') {
+      expect(typeof globalThis.indexedDB).toBe('undefined');
+      return;
+    }
+
+    await deleteWebDb();
+    try {
+      const zipStorage = new WebLineupStorage();
+      const webStorage = new WebLineupStorage();
+      const sharedMedia = {
+        id: 'shared-pool-image',
+        name: 'shared.png',
+        type: 'image' as const,
+        mimeType: 'image/png',
+        blob: new Blob(['shared-image-bytes'], { type: 'image/png' }),
+        url: 'blob:shared',
+      };
+      const source = {
+        ...point('dust2:main:custom:source'),
+        media: [{ ...sharedMedia, role: 'detail' as const }],
+      };
+      const reused = {
+        ...point('dust2:main:custom:reused'),
+        title: 'Reused result image',
+        media: [{ ...sharedMedia, role: 'result' as const }],
+      };
+
+      const zipBlob = await zipStorage.exportZip([source, reused]);
+      const imported = await zipStorage.importZipData(new File([zipBlob], 'lineups.zip', { type: 'application/zip' }));
+      await webStorage.replaceAll(imported.points);
+
+      const loaded = await webStorage.loadPoints();
+      const loadedSource = loaded.find((lineup) => lineup.id === source.id);
+      const loadedReused = loaded.find((lineup) => lineup.id === reused.id);
+      const reusedMedia = await webStorage.loadLineupMedia(reused.id);
+
+      expect(loadedSource?.media[0]).toMatchObject({ id: sharedMedia.id, role: 'detail' });
+      expect(loadedReused?.media[0]).toMatchObject({ id: sharedMedia.id, role: 'result' });
+      expect(reusedMedia[0]).toMatchObject({ id: sharedMedia.id, role: 'result' });
+      expect(await reusedMedia[0].blob.text()).toBe('shared-image-bytes');
+    } finally {
+      await deleteWebDb();
+    }
+  });
+
   it('should save and load playlists with thumbnail blobs', async () => {
     const storage = new WebLineupStorage();
     const item = playlist(`playlist-storage-${Date.now()}`);

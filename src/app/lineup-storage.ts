@@ -118,6 +118,7 @@ type PlaylistLineupRecord = {
 
 type MediaRecord = {
   id: string;
+  mediaId?: string;
   pointId: string;
   name: string;
   type: MediaKind;
@@ -212,6 +213,7 @@ export interface LineupStoragePort {
   saveResultSpot?(spot: StoredResultSpot): Promise<void>;
   deleteResultSpot?(spotId: string): Promise<void>;
   saveLineupVariant?(lineup: StoredPoint): Promise<void>;
+  saveLineupMetadata?(lineup: StoredPoint): Promise<void>;
   deleteLineupVariant?(lineupId: string): Promise<void>;
   loadMediaAssets?(): Promise<StoredMedia[]>;
   addMediaAsset?(media: StoredMedia, mapId?: string): Promise<StoredMedia>;
@@ -262,7 +264,7 @@ export class WebLineupStorage implements LineupStoragePort {
     return pointRecords.map((point) => {
       const mediaById = new Map(mediaRecords
         .filter((media) => media.pointId === point.id)
-        .map((media) => [media.id, media]));
+        .map((media) => [this.mediaAssetId(media), media]));
 
       const resultSpotId = point.resultSpotId ?? point.id;
       return {
@@ -272,7 +274,7 @@ export class WebLineupStorage implements LineupStoragePort {
           .map((media) => mediaById.get(media.id))
           .filter((media): media is MediaRecord => Boolean(media))
           .map((media) => ({
-            id: media.id,
+            id: this.mediaAssetId(media),
             name: media.name,
             type: media.type,
             mimeType: media.mimeType,
@@ -352,7 +354,7 @@ export class WebLineupStorage implements LineupStoragePort {
     return mediaRecords
       .filter((media) => media.pointId === lineupId)
       .map((media) => ({
-        id: media.id,
+        id: this.mediaAssetId(media),
         name: media.name,
         type: media.type,
         mimeType: media.mimeType,
@@ -387,7 +389,8 @@ export class WebLineupStorage implements LineupStoragePort {
       updatedAt: new Date().toISOString(),
     };
     const mediaRecords: MediaRecord[] = point.media.map((media) => ({
-      id: media.id,
+      id: this.mediaRecordId(point.id, media.id),
+      mediaId: media.id,
       pointId: point.id,
       name: media.name,
       type: media.type,
@@ -412,6 +415,24 @@ export class WebLineupStorage implements LineupStoragePort {
           mediaStore.put(media);
         }
       };
+    });
+  }
+
+  async saveLineupMetadata(point: StoredPoint): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      return;
+    }
+
+    const db = await this.openDb();
+    await this.transaction(db, [POINTS_STORE], 'readwrite', (transaction) => {
+      transaction.objectStore(POINTS_STORE).put({
+        ...point,
+        media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role: role ?? 'detail' })),
+        trajectory: point.trajectory ?? { vertices: [] },
+        resultSpotId: point.resultSpotId ?? point.id,
+        createdAt: point.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } satisfies PointRecord);
     });
   }
 
@@ -474,7 +495,8 @@ export class WebLineupStorage implements LineupStoragePort {
         } satisfies PointRecord);
         for (const media of point.media) {
           mediaStore.put({
-            id: media.id,
+            id: this.mediaRecordId(point.id, media.id),
+            mediaId: media.id,
             pointId: point.id,
             name: media.name,
             type: media.type,
@@ -499,14 +521,15 @@ export class WebLineupStorage implements LineupStoragePort {
     const mediaRecords = await this.getAll<MediaRecord>(db, MEDIA_STORE);
     const uniqueMedia = new Map<string, MediaRecord>();
     for (const media of mediaRecords) {
-      if (!uniqueMedia.has(media.id)) {
-        uniqueMedia.set(media.id, media);
+      const mediaId = this.mediaAssetId(media);
+      if (!uniqueMedia.has(mediaId)) {
+        uniqueMedia.set(mediaId, media);
       }
     }
 
     return Array.from(uniqueMedia.values())
       .map((media) => ({
-        id: media.id,
+        id: this.mediaAssetId(media),
         name: media.name,
         type: media.type,
         mimeType: media.mimeType,
@@ -1042,6 +1065,14 @@ export class WebLineupStorage implements LineupStoragePort {
     }
   }
 
+  private mediaAssetId(media: Pick<MediaRecord, 'id' | 'mediaId'>): string {
+    return media.mediaId ?? media.id;
+  }
+
+  private mediaRecordId(pointId: string, mediaId: string): string {
+    return `${pointId}:${mediaId}`;
+  }
+
   private getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
     return new Promise((resolve, reject) => {
       const request = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
@@ -1491,6 +1522,11 @@ class DesktopLineupStorage implements LineupStoragePort {
         [point.id, media.id, media.role ?? 'detail', index],
       );
     }));
+  }
+
+  async saveLineupMetadata(point: StoredPoint): Promise<void> {
+    const db = await this.db();
+    await this.upsertLineup(db, point);
   }
 
   async deletePoint(pointId: string): Promise<void> {
@@ -2278,6 +2314,11 @@ export class LineupStorage implements LineupStoragePort {
   async saveLineupVariant(lineup: StoredPoint): Promise<void> {
     const storage = await this.activeStorage();
     await (storage.saveLineupVariant?.(lineup) ?? storage.savePoint(lineup));
+  }
+
+  async saveLineupMetadata(lineup: StoredPoint): Promise<void> {
+    const storage = await this.activeStorage();
+    await (storage.saveLineupMetadata?.(lineup) ?? storage.savePoint(lineup));
   }
 
   async deleteLineupVariant(lineupId: string): Promise<void> {

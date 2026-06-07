@@ -169,6 +169,7 @@ type UserSettings = {
   rightPanelWidth: number;
   resizePanelsTogether: boolean;
   desktopContentRoot: string;
+  performanceLogging: boolean;
   accentColorId: AccentColorId;
   teamCtColorId: TeamCtColorId;
   teamTColorId: TeamTColorId;
@@ -221,6 +222,13 @@ type PlaylistDeleteConfirmation = {
   acknowledged: boolean;
   slug: string;
   secondStep: boolean;
+};
+
+type PerformanceLogEntry = {
+  name: string;
+  durationMs?: number;
+  at: string;
+  details?: Record<string, unknown>;
 };
 
 const GRENADE_CATEGORIES: GrenadeCategory[] = [
@@ -344,6 +352,7 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
   rightPanelWidth: 330,
   resizePanelsTogether: false,
   desktopContentRoot: '',
+  performanceLogging: false,
   accentColorId: 'blue',
   teamCtColorId: 'azure',
   teamTColorId: 'orange',
@@ -579,6 +588,7 @@ export class App {
   protected readonly teamSideOptions = TEAM_SIDE_OPTIONS;
   protected readonly teamFilterOptions = TEAM_FILTER_OPTIONS;
   protected readonly grenadeFilterOptions = GRENADE_FILTER_OPTIONS;
+  protected readonly skeletonCards = [0, 1, 2];
   protected readonly accentColorOptions = ACCENT_COLOR_OPTIONS;
   protected readonly teamCtColorOptions = TEAM_CT_COLOR_OPTIONS;
   protected readonly teamTColorOptions = TEAM_T_COLOR_OPTIONS;
@@ -629,6 +639,7 @@ export class App {
   protected readonly selectedMediaId = signal<string | null>(null);
   protected readonly imageEditorMediaId = signal<string | null>(null);
   protected readonly imageEditorPlaylistThumbnailOpen = signal(false);
+  protected readonly performanceEntries = signal<PerformanceLogEntry[]>([]);
   protected readonly trajectoryEditMode = signal<TrajectoryEditMode | null>(null);
   protected readonly selectedTrajectoryVertexId = signal<string | null>(null);
   protected readonly draftTrajectoryVertex = signal<TrajectoryVertex | null>(null);
@@ -639,6 +650,7 @@ export class App {
   protected readonly rightPanelWidth = computed(() => this.userSettings().rightPanelWidth);
   protected readonly resizePanelsTogether = computed(() => this.userSettings().resizePanelsTogether);
   protected readonly desktopContentRoot = computed(() => this.userSettings().desktopContentRoot);
+  protected readonly performanceLogging = computed(() => this.userSettings().performanceLogging);
   protected readonly showLegacyMigration = computed(() => {
     const status = this.storageMigrationStatus();
     return Boolean(status?.isDesktop && status.needsMigration && !status.completed && !status.error);
@@ -701,6 +713,9 @@ export class App {
   private guidePreviewFocusFrame: number | null = null;
   private guidePreviewFocusTarget: HTMLElement | null = null;
   private guidePreviewFocus = { x: -1, y: -1 };
+  private textSaveTimers = new Map<string, number>();
+  private longTaskMonitorId: number | null = null;
+  private lastLongTaskTick = performance.now();
 
   protected readonly selectedMap = computed(() => {
     return this.maps().find((map) => map.id === this.selectedMapId());
@@ -1042,6 +1057,9 @@ export class App {
   }
 
   constructor() {
+    if (this.performanceLogging()) {
+      this.startPerformanceMonitor();
+    }
     void this.initializeStorage();
   }
 
@@ -1544,6 +1562,16 @@ export class App {
     this.updateUserSettings({ showMenuScrollbar: showScrollbar });
   }
 
+  protected setPerformanceLogging(performanceLogging: boolean): void {
+    this.updateUserSettings({ performanceLogging });
+    if (performanceLogging) {
+      this.startPerformanceMonitor();
+      this.recordPerformance('perf:enabled');
+    } else {
+      this.stopPerformanceMonitor();
+    }
+  }
+
   protected setAccentColor(accentColorId: AccentColorId): void {
     if (!ACCENT_COLOR_OPTIONS.some((option) => option.id === accentColorId)) {
       return;
@@ -1808,7 +1836,18 @@ export class App {
 
   protected onBoardWheel(event: WheelEvent): void {
     event.preventDefault();
+    const startedAt = performance.now();
     this.zoomAt(event.currentTarget as HTMLElement, event.clientX, event.clientY, event.deltaY < 0 ? 0.15 : -0.15);
+    const duration = performance.now() - startedAt;
+    if (duration > 12) {
+      this.recordPerformance('map:wheel-zoom', duration, { zoom: this.mapZoom() });
+    }
+  }
+
+  protected onBoardNativeDragStart(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.recordPerformance('map:native-drag-blocked', undefined, { target: (event.target as HTMLElement)?.className });
   }
 
   protected zoomIn(event: MouseEvent): void {
@@ -1874,6 +1913,7 @@ export class App {
   }
 
   protected closePointEditor(): void {
+    this.flushSelectedPointMetadataSave();
     this.selectedPointId.set(null);
     this.selectedPointMode.set('view');
     this.lineupChooserOpen.set(false);
@@ -1984,11 +2024,13 @@ export class App {
   }
 
   protected updateSelectedPointTitle(value: string): void {
-    this.updateSelectedPoint({ title: value });
+    this.updateSelectedPoint({ title: value }, { save: false });
+    this.scheduleSelectedPointMetadataSave('title');
   }
 
   protected updateSelectedPointDescription(value: string): void {
-    this.updateSelectedPoint({ description: value });
+    this.updateSelectedPoint({ description: value }, { save: false });
+    this.scheduleSelectedPointMetadataSave('description');
   }
 
   protected displayDescription(point: MapPoint): string {
@@ -2113,9 +2155,10 @@ export class App {
   }
 
   protected saveSelectedPoint(): void {
+    this.flushSelectedPointMetadataSave();
     const point = this.selectedPoint();
     if (point?.grenadeCategoryId) {
-      void this.storage.savePoint(this.toStoredPoint(point));
+      this.savePointMeasured(point, 'manual-save');
       void this.persistSelectedLineupPlaylists();
       this.playlistAssignmentOpen.set(false);
       this.selectedPointMode.set('view');
@@ -2131,6 +2174,8 @@ export class App {
     this.updatePointById(pointId, {
       grenadeCategoryId: category.id,
       teamSide: this.selectedConcreteTeamSide(),
+      detailsLoaded: true,
+      mediaLoaded: true,
     });
     this.selectedPointId.set(pointId);
     this.selectedPointMode.set('edit');
@@ -2146,7 +2191,7 @@ export class App {
         x: point.x,
         y: point.y,
       });
-      void this.storage.savePoint(this.toStoredPoint(point));
+      this.savePointMeasured(point, 'assign-grenade');
     }
   }
 
@@ -2183,6 +2228,8 @@ export class App {
       trajectory: { vertices: [] },
       createdAt: now,
       updatedAt: now,
+      detailsLoaded: true,
+      mediaLoaded: true,
     };
     this.addedPoints.update((points) => ({
       ...points,
@@ -2201,7 +2248,7 @@ export class App {
       x: variant.x,
       y: variant.y,
     });
-    void this.storage.savePoint(this.toStoredPoint(variant));
+    this.savePointMeasured(variant, 'add-variant');
     this.closePointActionMenu();
   }
 
@@ -3491,7 +3538,7 @@ export class App {
       if (dragState.target.type === 'result') {
         this.saveResultSpotVariants(point);
       } else {
-        void this.storage.savePoint(this.toStoredPoint(point));
+        this.savePointMeasured(point, 'trajectory-drag');
       }
     }
   }
@@ -3514,7 +3561,7 @@ export class App {
     if (save) {
       nextVariants.forEach((variant) => {
         if (variant.grenadeCategoryId) {
-          void this.storage.savePoint(this.toStoredPoint(variant));
+          this.savePointMeasured(variant, 'result-drag');
         }
       });
     }
@@ -3524,7 +3571,7 @@ export class App {
     const groupId = this.resultSpotGroupKey(point);
     for (const variant of this.addedPoints()[this.currentLevelKey()] ?? []) {
       if (this.resultSpotGroupKey(variant) === groupId && variant.grenadeCategoryId) {
-        void this.storage.savePoint(this.toStoredPoint(variant));
+        this.savePointMeasured(variant, 'result-variants');
       }
     }
   }
@@ -3608,7 +3655,7 @@ export class App {
     this.draftTrajectoryVertex.set(null);
     const nextPoint = this.selectedPoint();
     if (nextPoint?.grenadeCategoryId) {
-      void this.storage.savePoint(this.toStoredPoint(nextPoint));
+      this.savePointMeasured(nextPoint, 'trajectory-commit');
     }
   }
 
@@ -3635,6 +3682,7 @@ export class App {
         desktopContentRoot: typeof parsedSettings.desktopContentRoot === 'string'
           ? parsedSettings.desktopContentRoot
           : DEFAULT_USER_SETTINGS.desktopContentRoot,
+        performanceLogging: parsedSettings.performanceLogging ?? DEFAULT_USER_SETTINGS.performanceLogging,
         accentColorId: accentColor?.id ?? DEFAULT_USER_SETTINGS.accentColorId,
         teamCtColorId: teamCtColor?.id ?? DEFAULT_USER_SETTINGS.teamCtColorId,
         teamTColorId: teamTColor?.id ?? DEFAULT_USER_SETTINGS.teamTColorId,
@@ -3700,10 +3748,15 @@ export class App {
       this.dragState.hasMoved = true;
     }
 
+    const startedAt = performance.now();
     this.mapPan.set({
       x: this.dragState.startPanX + dx,
       y: this.dragState.startPanY + dy,
     });
+    const duration = performance.now() - startedAt;
+    if (duration > 12) {
+      this.recordPerformance('map:pan-frame', duration, { zoom: this.mapZoom() });
+    }
   }
 
   private placeDraftTrajectoryVertex(event: MouseEvent): void {
@@ -3877,6 +3930,43 @@ export class App {
     this.updatePointInLevel(key, selectedPointId, patch, options);
   }
 
+  private scheduleSelectedPointMetadataSave(reason: string): void {
+    const point = this.selectedPoint();
+    if (!point?.grenadeCategoryId) {
+      return;
+    }
+
+    const timerKey = point.id;
+    const existingTimer = this.textSaveTimers.get(timerKey);
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+    }
+
+    this.textSaveTimers.set(timerKey, window.setTimeout(() => {
+      this.textSaveTimers.delete(timerKey);
+      const latestPoint = this.findPointById(point.id);
+      if (latestPoint?.grenadeCategoryId) {
+        this.savePointMetadataMeasured(latestPoint, `metadata:${reason}`);
+      }
+    }, 650));
+  }
+
+  private flushSelectedPointMetadataSave(): void {
+    const point = this.selectedPoint();
+    if (!point) {
+      return;
+    }
+
+    const timer = this.textSaveTimers.get(point.id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      this.textSaveTimers.delete(point.id);
+      if (point.grenadeCategoryId) {
+        this.savePointMetadataMeasured(point, 'metadata:flush');
+      }
+    }
+  }
+
   private updatePointById(pointId: string, patch: Partial<MapPoint>): void {
     const draftPoint = this.draftPoint();
     if (draftPoint?.id === pointId) {
@@ -3910,7 +4000,126 @@ export class App {
       }),
     }));
     if (options.save !== false && nextSavedPoint?.grenadeCategoryId) {
-      void this.storage.savePoint(this.toStoredPoint(nextSavedPoint));
+      this.savePointMeasured(nextSavedPoint, 'point:update');
+    }
+  }
+
+  private findPointById(pointId: string): MapPoint | undefined {
+    return Object.values(this.addedPoints()).flat().find((point) => point.id === pointId);
+  }
+
+  private savePointMeasured(point: MapPoint, reason: string): void {
+    const startedAt = performance.now();
+    void this.storage.savePoint(this.toStoredPoint(point))
+      .then(() => {
+        this.recordPerformance(`savePoint:${reason}`, performance.now() - startedAt, {
+          pointId: point.id,
+          mediaCount: point.media?.length ?? 0,
+          hasMediaLoaded: point.mediaLoaded ?? false,
+        });
+      })
+      .catch((error) => {
+        this.recordPerformance(`savePoint:${reason}:error`, performance.now() - startedAt, {
+          pointId: point.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  private savePointMetadataMeasured(point: MapPoint, reason: string): void {
+    const startedAt = performance.now();
+    void this.storage.saveLineupMetadata(this.toStoredPoint(point))
+      .then(() => {
+        this.recordPerformance(`saveLineupMetadata:${reason}`, performance.now() - startedAt, {
+          pointId: point.id,
+          mediaCount: point.media?.length ?? 0,
+        });
+      })
+      .catch((error) => {
+        this.recordPerformance(`saveLineupMetadata:${reason}:error`, performance.now() - startedAt, {
+          pointId: point.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  private async measureAsync<T>(
+    name: string,
+    action: () => Promise<T>,
+    details: Record<string, unknown> = {},
+  ): Promise<T> {
+    const startedAt = performance.now();
+    try {
+      const result = await action();
+      this.recordPerformance(name, performance.now() - startedAt, details);
+      return result;
+    } catch (error) {
+      this.recordPerformance(`${name}:error`, performance.now() - startedAt, {
+        ...details,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  private recordPerformance(
+    name: string,
+    durationMs?: number,
+    details: Record<string, unknown> = {},
+  ): void {
+    if (!this.performanceLogging()) {
+      return;
+    }
+
+    const entry: PerformanceLogEntry = {
+      name,
+      durationMs: durationMs === undefined ? undefined : Math.round(durationMs * 10) / 10,
+      at: new Date().toISOString(),
+      details: {
+        ...details,
+        ...this.memorySnapshot(),
+      },
+    };
+    this.performanceEntries.update((entries) => [...entries.slice(-79), entry]);
+    const label = entry.durationMs === undefined ? name : `${name} ${entry.durationMs}ms`;
+    // eslint-disable-next-line no-console
+    console.debug('[cs2nades:perf]', label, entry.details);
+  }
+
+  private memorySnapshot(): Record<string, unknown> {
+    const memory = (performance as Performance & {
+      memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number };
+    }).memory;
+    if (!memory) {
+      return {};
+    }
+
+    return {
+      usedHeapMb: Math.round(memory.usedJSHeapSize / 1024 / 1024),
+      totalHeapMb: Math.round(memory.totalJSHeapSize / 1024 / 1024),
+    };
+  }
+
+  private startPerformanceMonitor(): void {
+    if (this.longTaskMonitorId !== null) {
+      return;
+    }
+
+    this.lastLongTaskTick = performance.now();
+    this.longTaskMonitorId = window.setInterval(() => {
+      const now = performance.now();
+      const drift = now - this.lastLongTaskTick - 1000;
+      this.lastLongTaskTick = now;
+      if (drift > 180) {
+        this.recordPerformance('main-thread:blocked', drift);
+      }
+    }, 1000);
+  }
+
+  private stopPerformanceMonitor(): void {
+    if (this.longTaskMonitorId !== null) {
+      window.clearInterval(this.longTaskMonitorId);
+      this.longTaskMonitorId = null;
     }
   }
 
@@ -3944,10 +4153,10 @@ export class App {
   }
 
   private async initializeStorage(): Promise<void> {
-    await this.refreshDesktopContentRoot();
-    await this.loadStoredMaps();
-    await this.loadStoredLineupSummaries();
-    await this.loadStoredPlaylists();
+    await this.measureAsync('startup:storage-status', () => this.refreshDesktopContentRoot());
+    await this.measureAsync('startup:maps', () => this.loadStoredMaps());
+    await this.measureAsync('startup:lineup-summaries', () => this.loadStoredLineupSummaries());
+    await this.measureAsync('startup:playlists', () => this.loadStoredPlaylists());
   }
 
   private async loadStoredPlaylists(): Promise<void> {
@@ -3998,15 +4207,23 @@ export class App {
   }
 
   private async ensureResultSpotHydrated(point: MapPoint): Promise<void> {
-    await this.ensureLineupHydrated(point.id);
-    const variants = await this.storage.loadResultSpotLineups(this.resultSpotId(point), point.mapId, point.levelId);
+    await this.measureAsync('hydrate:selected-lineup', () => this.ensureLineupHydrated(point.id), { pointId: point.id });
+    const variants = await this.measureAsync(
+      'hydrate:result-spot-variants',
+      () => this.storage.loadResultSpotLineups(this.resultSpotId(point), point.mapId, point.levelId),
+      { resultSpotId: this.resultSpotId(point), mapId: point.mapId, levelId: point.levelId },
+    );
     if (variants.length > 0) {
       this.mergeStoredPoints(variants);
     }
 
-    await Promise.all(variants
-      .filter((variant) => variant.id !== point.id)
-      .map((variant) => this.ensureLineupHydrated(variant.id)));
+    await this.measureAsync(
+      'hydrate:sibling-lineups',
+      () => Promise.all(variants
+        .filter((variant) => variant.id !== point.id)
+        .map((variant) => this.ensureLineupHydrated(variant.id))),
+      { count: Math.max(0, variants.length - 1) },
+    );
   }
 
   private async ensureLineupHydrated(lineupId: string): Promise<void> {
@@ -4223,15 +4440,7 @@ export class App {
 
   private createPlaylistThumbnailFromTitle(title: string): { name: string; mimeType: string; blob: Blob; url: string } {
     const safeTitle = title.trim() || 'Playlist';
-    const initials = safeTitle
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? '')
-      .join('') || 'PL';
     const hue = this.hashText(safeTitle) % 360;
-    const escapedTitle = this.escapeSvgText(safeTitle);
-    const escapedInitials = this.escapeSvgText(initials);
     const base = this.hslToHex(hue, 48, 18);
     const accent = this.hslToHex((hue + 28) % 360, 62, 30);
     const warm = this.hslToHex((hue + 86) % 360, 58, 42);
@@ -4245,8 +4454,6 @@ export class App {
       `<path d="M-34 248 C96 170 145 326 282 226 C407 135 463 244 674 98 L674 392 L-34 392 Z" fill="${warm}" opacity="0.34"/>`,
       `<path d="M396 -52 C520 8 488 124 648 86 L648 -52 Z" fill="${cool}" opacity="0.46"/>`,
       '<rect x="24" y="24" width="592" height="312" rx="22" fill="#101216" opacity="0.18"/>',
-      `<text x="56" y="74" fill="#d5d8de" font-family="Arial, sans-serif" font-size="34" font-weight="800">${escapedTitle}</text>`,
-      `<text x="56" y="232" fill="#ffffff" font-family="Arial, sans-serif" font-size="112" font-weight="800">${escapedInitials}</text>`,
       '</svg>',
     ].join('');
     const mimeType = 'image/svg+xml';
@@ -4294,15 +4501,6 @@ export class App {
       .join('')
       .padStart(6, '0')
       .replace(/^/, '#');
-  }
-
-  private escapeSvgText(value: string): string {
-    return value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
   }
 
   private getMapPercentFromClientPoint(clientX: number, clientY: number, board: HTMLElement): Pick<MapPoint, 'x' | 'y'> {

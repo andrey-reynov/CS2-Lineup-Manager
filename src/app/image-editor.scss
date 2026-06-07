@@ -37,6 +37,8 @@
 }
 
 .image-editor-header {
+  position: relative;
+  z-index: 10;
   border-bottom: 1px solid var(--vscode-border-muted);
 }
 
@@ -95,6 +97,11 @@
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
+}
+
+.image-editor-icon-button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .image-editor-icon-button:hover,
@@ -422,6 +429,7 @@
 
 .image-editor-save-menu {
   position: absolute;
+  z-index: 20;
   right: 0;
   top: calc(100% + 8px);
   bottom: auto;
