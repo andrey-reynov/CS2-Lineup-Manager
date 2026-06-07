@@ -1,7 +1,75 @@
-import { LineupStorage, StoredMap, StoredPoint, StoredResultSpotWithLineups, WebLineupStorage } from './lineup-storage';
+import { LineupStorage, StoredMap, StoredPlaylist, StoredPoint, StoredResultSpotWithLineups, WebLineupStorage } from './lineup-storage';
 import JSZip from 'jszip';
 
 describe('LineupStorage', () => {
+  const webDbName = 'cs2nades-lineups';
+
+  function playlist(id: string, title = 'Utility Pack'): StoredPlaylist {
+    return {
+      id,
+      title,
+      description: 'Saved utility set',
+      thumbnailName: 'thumb.png',
+      thumbnailMimeType: 'image/png',
+      thumbnailBlob: new Blob([`thumb-${id}`], { type: 'image/png' }),
+      thumbnailUrl: 'blob:thumb',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function point(id: string): StoredPoint {
+    return {
+      id,
+      label: '1',
+      mapId: 'dust2',
+      levelId: 'main',
+      x: 50,
+      y: 55,
+      kind: 'custom',
+      grenadeCategoryId: 'smoke',
+      teamSide: 'ct',
+      title: 'Window smoke',
+      description: '',
+      requirements: [],
+      trajectory: { vertices: [] },
+      media: [],
+    };
+  }
+
+  function deleteWebDb(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.deleteDatabase(webDbName);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('Test IndexedDB delete was blocked'));
+    });
+  }
+
+  function createLegacyWebDb(version: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = globalThis.indexedDB.open(webDbName, version);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('points')) {
+          db.createObjectStore('points', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('media')) {
+          const mediaStore = db.createObjectStore('media', { keyPath: 'id' });
+          mediaStore.createIndex('pointId', 'pointId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('maps')) {
+          db.createObjectStore('maps', { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   it('should use web storage fallback outside Tauri', async () => {
     const storage = new LineupStorage();
     await expect(storage.getMigrationStatus()).resolves.toMatchObject({
@@ -223,5 +291,91 @@ describe('LineupStorage', () => {
     expect(imported.maps).toHaveLength(1);
     expect(imported.maps[0].name).toBe('Workshop Map');
     expect(await imported.maps[0].imageBlob.text()).toBe('radar-bytes');
+  });
+
+  it('should save and load playlists with thumbnail blobs', async () => {
+    const storage = new WebLineupStorage();
+    const item = playlist(`playlist-storage-${Date.now()}`);
+
+    await storage.savePlaylist(item);
+    const saved = (await storage.loadPlaylists()).find((entry) => entry.id === item.id);
+
+    expect(saved?.title).toBe('Utility Pack');
+    expect(saved?.thumbnailMimeType).toBe('image/png');
+    expect(await saved!.thumbnailBlob.text()).toBe(`thumb-${item.id}`);
+
+    await storage.deletePlaylist(item.id);
+  });
+
+  it('should auto-migrate an existing web database that is missing playlist stores', async () => {
+    if (typeof globalThis.indexedDB === 'undefined') {
+      expect(typeof globalThis.indexedDB).toBe('undefined');
+      return;
+    }
+
+    await deleteWebDb();
+    try {
+      await createLegacyWebDb(3);
+      const storage = new WebLineupStorage();
+      const item = playlist(`playlist-migration-${Date.now()}`);
+
+      await expect(storage.loadPlaylists()).resolves.toEqual([]);
+      await storage.savePlaylist(item);
+
+      const saved = (await storage.loadPlaylists()).find((entry) => entry.id === item.id);
+      expect(saved?.title).toBe('Utility Pack');
+      expect(await saved!.thumbnailBlob.text()).toBe(`thumb-${item.id}`);
+    } finally {
+      await deleteWebDb();
+    }
+  });
+
+  it('should add and remove playlist memberships without deleting lineups', async () => {
+    const storage = new WebLineupStorage();
+    const id = `playlist-membership-${Date.now()}`;
+    const lineup = point(`${id}:lineup`);
+
+    await storage.savePoint(lineup);
+    await storage.savePlaylist(playlist(id));
+    await storage.setLineupPlaylists(lineup.id, [id]);
+
+    expect(await storage.loadPlaylistLineupIds(id)).toEqual([lineup.id]);
+    expect(await storage.loadLineupPlaylistIds(lineup.id)).toEqual([id]);
+
+    await storage.deletePlaylist(id, false);
+
+    expect(await storage.loadLineupDetails(lineup.id)).toBeTruthy();
+    expect(await storage.loadPlaylistLineupIds(id)).toEqual([]);
+    await storage.deletePoint(lineup.id);
+  });
+
+  it('should delete playlist content when requested', async () => {
+    const storage = new WebLineupStorage();
+    const id = `playlist-delete-content-${Date.now()}`;
+    const lineup = point(`${id}:lineup`);
+
+    await storage.savePoint(lineup);
+    await storage.savePlaylist(playlist(id));
+    await storage.setPlaylistLineups(id, [lineup.id]);
+    await storage.deletePlaylist(id, true);
+
+    expect(await storage.loadLineupDetails(lineup.id)).toBeUndefined();
+    expect(await storage.loadPlaylistLineupIds(id)).toEqual([]);
+  });
+
+  it('should export and import playlists through the ZIP manifest', async () => {
+    const storage = new WebLineupStorage();
+    const id = `playlist-export-${Date.now()}`;
+    const lineup = point(`${id}:lineup`);
+    const item = playlist(id, 'Export Pack');
+    const memberships = { [id]: [lineup.id] };
+
+    const zipBlob = await storage.exportZip([lineup], [], [item], memberships);
+    const imported = await storage.importZipData(new File([zipBlob], 'lineups.zip', { type: 'application/zip' }));
+
+    expect(imported.playlists).toHaveLength(1);
+    expect(imported.playlists[0].title).toBe('Export Pack');
+    expect(imported.playlists[0].lineupIds).toEqual([lineup.id]);
+    expect(await imported.playlists[0].thumbnailBlob.text()).toBe(`thumb-${id}`);
   });
 });

@@ -49,6 +49,15 @@ export type StoredPoint = {
   updatedAt?: string;
 };
 
+export type StoredLineupSummary = Omit<StoredPoint, 'requirements' | 'media' | 'trajectory'> & {
+  requirements?: string[];
+  media?: Array<Omit<StoredMedia, 'blob' | 'url'> & { url?: string; blob?: Blob }>;
+  trajectory?: StoredTrajectory;
+  mediaCount?: number;
+  mediaRoles?: MediaRole[];
+  hasTrajectory?: boolean;
+};
+
 export type StoredResultSpot = {
   id: string;
   label: string;
@@ -80,11 +89,32 @@ export type StoredMap = {
   imageUrl: string;
 };
 
+export type StoredPlaylist = {
+  id: string;
+  title: string;
+  description: string;
+  thumbnailName: string;
+  thumbnailMimeType: string;
+  thumbnailBlob: Blob;
+  thumbnailUrl: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lineupIds?: string[];
+};
+
 type PointRecord = Omit<StoredPoint, 'media'> & {
   media: Array<Omit<StoredMedia, 'blob' | 'url'>>;
 };
 
 type MapRecord = Omit<StoredMap, 'imageUrl'>;
+
+type PlaylistRecord = Omit<StoredPlaylist, 'thumbnailUrl' | 'lineupIds'>;
+
+type PlaylistLineupRecord = {
+  id: string;
+  playlistId: string;
+  lineupId: string;
+};
 
 type MediaRecord = {
   id: string;
@@ -106,6 +136,7 @@ type ExportManifest = {
   exportedAt: string;
   maps?: Array<Omit<StoredMap, 'imageBlob' | 'imageUrl'> & { imageFileName: string }>;
   points: Array<Omit<PointRecord, 'media'> & { media: ExportMedia[] }>;
+  playlists?: Array<Omit<PlaylistRecord, 'thumbnailBlob'> & { thumbnailFileName: string; lineupIds: string[] }>;
 };
 
 type ContentLineupMedia = {
@@ -133,10 +164,12 @@ type ContentLineup = {
 };
 
 const DB_NAME = 'cs2nades-lineups';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 const POINTS_STORE = 'points';
 const MEDIA_STORE = 'media';
 const MAPS_STORE = 'maps';
+const PLAYLISTS_STORE = 'playlists';
+const PLAYLIST_LINEUPS_STORE = 'playlistLineups';
 
 export type StorageMigrationStatus = {
   isDesktop: boolean;
@@ -155,9 +188,26 @@ export interface LineupStoragePort {
   deletePoint(pointId: string): Promise<void>;
   replaceAll(points: StoredPoint[]): Promise<void>;
   replaceAllMaps(maps: StoredMap[]): Promise<void>;
-  exportZip(points: StoredPoint[], maps?: StoredMap[]): Promise<Blob>;
+  exportZip(
+    points: StoredPoint[],
+    maps?: StoredMap[],
+    playlists?: StoredPlaylist[],
+    playlistMemberships?: Record<string, string[]>,
+  ): Promise<Blob>;
   importZip(file: File): Promise<StoredPoint[]>;
-  importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }>;
+  importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[]; playlists?: StoredPlaylist[] }>;
+  loadPlaylists?(): Promise<StoredPlaylist[]>;
+  savePlaylist?(playlist: StoredPlaylist): Promise<void>;
+  deletePlaylist?(playlistId: string, deleteContent?: boolean): Promise<void>;
+  loadPlaylistLineupIds?(playlistId: string): Promise<string[]>;
+  loadLineupPlaylistIds?(lineupId: string): Promise<string[]>;
+  loadPlaylistMemberships?(): Promise<Record<string, string[]>>;
+  setPlaylistLineups?(playlistId: string, lineupIds: string[]): Promise<void>;
+  setLineupPlaylists?(lineupId: string, playlistIds: string[]): Promise<void>;
+  loadLineupSummaries?(mapId?: string, levelId?: string): Promise<StoredLineupSummary[]>;
+  loadResultSpotLineups?(resultSpotId: string, mapId: string, levelId: string): Promise<StoredLineupSummary[]>;
+  loadLineupDetails?(lineupId: string): Promise<StoredPoint | undefined>;
+  loadLineupMedia?(lineupId: string): Promise<StoredMedia[]>;
   loadResultSpotsWithLineups?(): Promise<StoredResultSpotWithLineups[]>;
   saveResultSpot?(spot: StoredResultSpot): Promise<void>;
   deleteResultSpot?(spotId: string): Promise<void>;
@@ -172,6 +222,9 @@ export interface LineupStoragePort {
 
 export class WebLineupStorage implements LineupStoragePort {
   private dbPromise: Promise<IDBDatabase> | undefined;
+  private readonly memoryPoints = new Map<string, StoredPoint>();
+  private readonly memoryPlaylists = new Map<string, StoredPlaylist>();
+  private readonly memoryMemberships = new Map<string, Set<string>>();
 
   async loadMaps(): Promise<StoredMap[]> {
     if (!this.hasIndexedDb()) {
@@ -199,7 +252,7 @@ export class WebLineupStorage implements LineupStoragePort {
 
   async loadPoints(): Promise<StoredPoint[]> {
     if (!this.hasIndexedDb()) {
-      return [];
+      return Array.from(this.memoryPoints.values());
     }
 
     const db = await this.openDb();
@@ -237,8 +290,90 @@ export class WebLineupStorage implements LineupStoragePort {
     });
   }
 
+  async loadLineupSummaries(mapId?: string, levelId?: string): Promise<StoredLineupSummary[]> {
+    if (!this.hasIndexedDb()) {
+      return Array.from(this.memoryPoints.values())
+        .filter((point) => (!mapId || point.mapId === mapId) && (!levelId || point.levelId === levelId))
+        .map((point) => this.toLineupSummary({
+          ...point,
+          media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role })),
+        }));
+    }
+
+    const db = await this.openDb();
+    const pointRecords = await this.getAll<PointRecord>(db, POINTS_STORE);
+    return pointRecords
+      .filter((point) => (!mapId || point.mapId === mapId) && (!levelId || point.levelId === levelId))
+      .map((point) => this.toLineupSummary(point));
+  }
+
+  async loadResultSpotLineups(resultSpotId: string, mapId: string, levelId: string): Promise<StoredLineupSummary[]> {
+    const summaries = await this.loadLineupSummaries(mapId, levelId);
+    return summaries.filter((point) => (point.resultSpotId ?? point.id) === resultSpotId);
+  }
+
+  async loadLineupDetails(lineupId: string): Promise<StoredPoint | undefined> {
+    if (!this.hasIndexedDb()) {
+      return this.memoryPoints.get(lineupId);
+    }
+
+    const db = await this.openDb();
+    const pointRecords = await this.getAll<PointRecord>(db, POINTS_STORE);
+    const point = pointRecords.find((record) => record.id === lineupId);
+    if (!point) {
+      return undefined;
+    }
+
+    return {
+      ...point,
+      resultSpotId: point.resultSpotId ?? point.id,
+      requirements: point.requirements ?? [],
+      trajectory: point.trajectory ?? { vertices: [] },
+      media: point.media.map((media) => ({
+        ...media,
+        blob: new Blob(),
+        url: '',
+        role: media.role ?? 'detail',
+        sourceLineupId: point.id,
+        sourceLineupTitle: point.title,
+      })),
+    };
+  }
+
+  async loadLineupMedia(lineupId: string): Promise<StoredMedia[]> {
+    if (!this.hasIndexedDb()) {
+      return this.memoryPoints.get(lineupId)?.media ?? [];
+    }
+
+    const db = await this.openDb();
+    const pointRecords = await this.getAll<PointRecord>(db, POINTS_STORE);
+    const point = pointRecords.find((record) => record.id === lineupId);
+    const mediaRecords = await this.getAll<MediaRecord>(db, MEDIA_STORE);
+    return mediaRecords
+      .filter((media) => media.pointId === lineupId)
+      .map((media) => ({
+        id: media.id,
+        name: media.name,
+        type: media.type,
+        mimeType: media.mimeType,
+        blob: media.blob,
+        url: URL.createObjectURL(media.blob),
+        role: media.role ?? 'detail',
+        createdAt: media.createdAt,
+        sourceLineupId: media.pointId,
+        sourceLineupTitle: point?.title,
+      }));
+  }
+
   async savePoint(point: StoredPoint): Promise<void> {
     if (!this.hasIndexedDb()) {
+      this.memoryPoints.set(point.id, {
+        ...point,
+        resultSpotId: point.resultSpotId ?? point.id,
+        trajectory: point.trajectory ?? { vertices: [] },
+        createdAt: point.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
       return;
     }
 
@@ -282,14 +417,26 @@ export class WebLineupStorage implements LineupStoragePort {
 
   async deletePoint(pointId: string): Promise<void> {
     if (!this.hasIndexedDb()) {
+      this.memoryPoints.delete(pointId);
+      for (const lineupIds of this.memoryMemberships.values()) {
+        lineupIds.delete(pointId);
+      }
       return;
     }
 
     const db = await this.openDb();
-    await this.transaction(db, [POINTS_STORE, MEDIA_STORE], 'readwrite', (transaction) => {
+    await this.transaction(db, [POINTS_STORE, MEDIA_STORE, PLAYLIST_LINEUPS_STORE], 'readwrite', (transaction) => {
       transaction.objectStore(POINTS_STORE).delete(pointId);
       const mediaStore = transaction.objectStore(MEDIA_STORE);
       mediaStore.index('pointId').openCursor(IDBKeyRange.only(pointId)).onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+      const membershipStore = transaction.objectStore(PLAYLIST_LINEUPS_STORE);
+      membershipStore.index('lineupId').openCursor(IDBKeyRange.only(pointId)).onsuccess = (event) => {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
         if (cursor) {
           cursor.delete();
@@ -301,13 +448,19 @@ export class WebLineupStorage implements LineupStoragePort {
 
   async replaceAll(points: StoredPoint[]): Promise<void> {
     if (!this.hasIndexedDb()) {
+      this.memoryPoints.clear();
+      this.memoryMemberships.clear();
+      for (const point of points) {
+        this.memoryPoints.set(point.id, point);
+      }
       return;
     }
 
     const db = await this.openDb();
-    await this.transaction(db, [POINTS_STORE, MEDIA_STORE], 'readwrite', (transaction) => {
+    await this.transaction(db, [POINTS_STORE, MEDIA_STORE, PLAYLIST_LINEUPS_STORE], 'readwrite', (transaction) => {
       transaction.objectStore(POINTS_STORE).clear();
       transaction.objectStore(MEDIA_STORE).clear();
+      transaction.objectStore(PLAYLIST_LINEUPS_STORE).clear();
       const pointStore = transaction.objectStore(POINTS_STORE);
       const mediaStore = transaction.objectStore(MEDIA_STORE);
       for (const point of points) {
@@ -426,9 +579,167 @@ export class WebLineupStorage implements LineupStoragePort {
     return this.deletePoint(lineupId);
   }
 
-  async exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
+  async loadPlaylists(): Promise<StoredPlaylist[]> {
+    if (!this.hasIndexedDb()) {
+      return Array.from(this.memoryPlaylists.values());
+    }
+
+    const db = await this.openDb();
+    const playlists = await this.getAll<PlaylistRecord>(db, PLAYLISTS_STORE);
+    return playlists
+      .map((playlist) => ({
+        ...playlist,
+        thumbnailUrl: URL.createObjectURL(playlist.thumbnailBlob),
+      }))
+      .sort((a, b) => (b.updatedAt ?? b.createdAt ?? '').localeCompare(a.updatedAt ?? a.createdAt ?? ''));
+  }
+
+  async savePlaylist(playlist: StoredPlaylist): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      this.memoryPlaylists.set(playlist.id, {
+        ...playlist,
+        createdAt: playlist.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const db = await this.openDb();
+    await this.transaction(db, [PLAYLISTS_STORE], 'readwrite', (transaction) => {
+      transaction.objectStore(PLAYLISTS_STORE).put(this.toPlaylistRecord({
+        ...playlist,
+        createdAt: playlist.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+    });
+  }
+
+  async deletePlaylist(playlistId: string, deleteContent = false): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      const lineupIds = deleteContent ? Array.from(this.memoryMemberships.get(playlistId) ?? []) : [];
+      for (const lineupId of lineupIds) {
+        this.memoryPoints.delete(lineupId);
+      }
+      this.memoryPlaylists.delete(playlistId);
+      this.memoryMemberships.delete(playlistId);
+      return;
+    }
+
+    const lineupIds = deleteContent ? await this.loadPlaylistLineupIds(playlistId) : [];
+    await Promise.all(lineupIds.map((lineupId) => this.deletePoint(lineupId)));
+    const db = await this.openDb();
+    await this.transaction(db, [PLAYLISTS_STORE, PLAYLIST_LINEUPS_STORE], 'readwrite', (transaction) => {
+      transaction.objectStore(PLAYLISTS_STORE).delete(playlistId);
+      const membershipStore = transaction.objectStore(PLAYLIST_LINEUPS_STORE);
+      membershipStore.index('playlistId').openCursor(IDBKeyRange.only(playlistId)).onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+    });
+  }
+
+  async loadPlaylistLineupIds(playlistId: string): Promise<string[]> {
+    if (!this.hasIndexedDb()) {
+      return Array.from(this.memoryMemberships.get(playlistId) ?? []);
+    }
+
+    const memberships = await this.loadMembershipRecords('playlistId', playlistId);
+    return memberships.map((membership) => membership.lineupId);
+  }
+
+  async loadLineupPlaylistIds(lineupId: string): Promise<string[]> {
+    if (!this.hasIndexedDb()) {
+      return Array.from(this.memoryMemberships.entries())
+        .filter(([, lineupIds]) => lineupIds.has(lineupId))
+        .map(([playlistId]) => playlistId);
+    }
+
+    const memberships = await this.loadMembershipRecords('lineupId', lineupId);
+    return memberships.map((membership) => membership.playlistId);
+  }
+
+  async loadPlaylistMemberships(): Promise<Record<string, string[]>> {
+    if (!this.hasIndexedDb()) {
+      return Object.fromEntries(Array.from(this.memoryMemberships.entries()).map(([playlistId, lineupIds]) => [
+        playlistId,
+        Array.from(lineupIds),
+      ]));
+    }
+
+    const db = await this.openDb();
+    const memberships = await this.getAll<PlaylistLineupRecord>(db, PLAYLIST_LINEUPS_STORE);
+    return this.groupMemberships(memberships);
+  }
+
+  async setPlaylistLineups(playlistId: string, lineupIds: string[]): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      this.memoryMemberships.set(playlistId, new Set(lineupIds));
+      return;
+    }
+
+    const uniqueLineupIds = Array.from(new Set(lineupIds));
+    const db = await this.openDb();
+    await this.transaction(db, [PLAYLIST_LINEUPS_STORE], 'readwrite', (transaction) => {
+      const store = transaction.objectStore(PLAYLIST_LINEUPS_STORE);
+      store.index('playlistId').openCursor(IDBKeyRange.only(playlistId)).onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+          return;
+        }
+
+        for (const lineupId of uniqueLineupIds) {
+          store.put(this.playlistLineupRecord(playlistId, lineupId));
+        }
+      };
+    });
+  }
+
+  async setLineupPlaylists(lineupId: string, playlistIds: string[]): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      for (const lineupIds of this.memoryMemberships.values()) {
+        lineupIds.delete(lineupId);
+      }
+      for (const playlistId of playlistIds) {
+        const lineupIds = this.memoryMemberships.get(playlistId) ?? new Set<string>();
+        lineupIds.add(lineupId);
+        this.memoryMemberships.set(playlistId, lineupIds);
+      }
+      return;
+    }
+
+    const uniquePlaylistIds = Array.from(new Set(playlistIds));
+    const db = await this.openDb();
+    await this.transaction(db, [PLAYLIST_LINEUPS_STORE], 'readwrite', (transaction) => {
+      const store = transaction.objectStore(PLAYLIST_LINEUPS_STORE);
+      store.index('lineupId').openCursor(IDBKeyRange.only(lineupId)).onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+          return;
+        }
+
+        for (const playlistId of uniquePlaylistIds) {
+          store.put(this.playlistLineupRecord(playlistId, lineupId));
+        }
+      };
+    });
+  }
+
+  async exportZip(
+    points: StoredPoint[],
+    maps: StoredMap[] = [],
+    playlists: StoredPlaylist[] = [],
+    playlistMemberships?: Record<string, string[]>,
+  ): Promise<Blob> {
     const zip = new JSZip();
     const contentLineups = new Map<string, ContentLineup[]>();
+    const memberships = playlistMemberships ?? await this.loadPlaylistMemberships();
     const exportMaps = maps.map((map) => {
       const imageFileName = `Content/Maps/${this.safeFolderName(map.id)}/Meta/${this.safeFileName(map.imageName)}`;
       zip.file(imageFileName, map.imageBlob);
@@ -464,6 +775,21 @@ export class WebLineupStorage implements LineupStoragePort {
           };
         }),
       })),
+      playlists: playlists.map((playlist) => {
+        const thumbnailFileName = `Content/Playlists/${this.safeFolderName(playlist.id)}/${this.safeFileName(playlist.thumbnailName)}`;
+        zip.file(thumbnailFileName, playlist.thumbnailBlob);
+        return {
+          id: playlist.id,
+          title: playlist.title,
+          description: playlist.description,
+          thumbnailName: playlist.thumbnailName,
+          thumbnailMimeType: playlist.thumbnailMimeType,
+          thumbnailFileName,
+          lineupIds: memberships[playlist.id] ?? [],
+          createdAt: playlist.createdAt,
+          updatedAt: playlist.updatedAt,
+        };
+      }),
     };
 
     for (const point of manifest.points) {
@@ -561,7 +887,7 @@ export class WebLineupStorage implements LineupStoragePort {
     })));
   }
 
-  async importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }> {
+  async importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[]; playlists: StoredPlaylist[] }> {
     const zip = await JSZip.loadAsync(file);
     const manifestFile = zip.file('manifest.json');
     if (!manifestFile) {
@@ -595,10 +921,32 @@ export class WebLineupStorage implements LineupStoragePort {
         imageUrl: URL.createObjectURL(imageBlob),
       };
     }));
+    const playlists = await Promise.all((manifest.playlists ?? []).map(async (playlist) => {
+      const thumbnailFile = zip.file(playlist.thumbnailFileName);
+      if (!thumbnailFile) {
+        throw new Error(`Playlist thumbnail is missing: ${playlist.thumbnailFileName}`);
+      }
+
+      const importedBlob = await thumbnailFile.async('blob');
+      const thumbnailBlob = new Blob([importedBlob], { type: playlist.thumbnailMimeType });
+      return {
+        id: playlist.id,
+        title: playlist.title,
+        description: playlist.description,
+        thumbnailName: playlist.thumbnailName,
+        thumbnailMimeType: playlist.thumbnailMimeType,
+        thumbnailBlob,
+        thumbnailUrl: URL.createObjectURL(thumbnailBlob),
+        createdAt: playlist.createdAt,
+        updatedAt: playlist.updatedAt,
+        lineupIds: playlist.lineupIds ?? [],
+      };
+    }));
 
     return {
       maps,
       points: await this.importZip(file),
+      playlists,
     };
   }
 
@@ -608,25 +956,90 @@ export class WebLineupStorage implements LineupStoragePort {
 
   private openDb(): Promise<IDBDatabase> {
     this.dbPromise ??= new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open(DB_NAME);
       request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(POINTS_STORE)) {
-          db.createObjectStore(POINTS_STORE, { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains(MEDIA_STORE)) {
-          const mediaStore = db.createObjectStore(MEDIA_STORE, { keyPath: 'id' });
-          mediaStore.createIndex('pointId', 'pointId', { unique: false });
-        }
-        if (!db.objectStoreNames.contains(MAPS_STORE)) {
-          db.createObjectStore(MAPS_STORE, { keyPath: 'id' });
-        }
+        this.ensureWebSchema(request.result, request.transaction);
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        if (db.version < DB_VERSION || !this.hasWebSchema(db)) {
+          const nextVersion = Math.max(DB_VERSION, db.version + 1);
+          db.close();
+          this.openDbVersion(nextVersion).then(resolve, reject);
+          return;
+        }
+
+        resolve(db);
+      };
       request.onerror = () => reject(request.error);
     });
 
     return this.dbPromise;
+  }
+
+  private openDbVersion(version: number): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, version);
+      request.onupgradeneeded = () => {
+        this.ensureWebSchema(request.result, request.transaction);
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        if (!this.hasWebSchema(db)) {
+          db.close();
+          reject(new Error('IndexedDB schema migration failed'));
+          return;
+        }
+
+        resolve(db);
+      };
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('IndexedDB schema migration is blocked by another open app tab'));
+    });
+  }
+
+  private hasWebSchema(db: IDBDatabase): boolean {
+    if (!db.objectStoreNames.contains(POINTS_STORE)
+      || !db.objectStoreNames.contains(MEDIA_STORE)
+      || !db.objectStoreNames.contains(MAPS_STORE)
+      || !db.objectStoreNames.contains(PLAYLISTS_STORE)
+      || !db.objectStoreNames.contains(PLAYLIST_LINEUPS_STORE)) {
+      return false;
+    }
+
+    const transaction = db.transaction([MEDIA_STORE, PLAYLIST_LINEUPS_STORE], 'readonly');
+    const mediaStore = transaction.objectStore(MEDIA_STORE);
+    const membershipStore = transaction.objectStore(PLAYLIST_LINEUPS_STORE);
+    return mediaStore.indexNames.contains('pointId')
+      && membershipStore.indexNames.contains('playlistId')
+      && membershipStore.indexNames.contains('lineupId');
+  }
+
+  private ensureWebSchema(db: IDBDatabase, transaction: IDBTransaction | null): void {
+    if (!db.objectStoreNames.contains(POINTS_STORE)) {
+      db.createObjectStore(POINTS_STORE, { keyPath: 'id' });
+    }
+    const mediaStore = db.objectStoreNames.contains(MEDIA_STORE)
+      ? transaction?.objectStore(MEDIA_STORE)
+      : db.createObjectStore(MEDIA_STORE, { keyPath: 'id' });
+    if (mediaStore && !mediaStore.indexNames.contains('pointId')) {
+      mediaStore.createIndex('pointId', 'pointId', { unique: false });
+    }
+    if (!db.objectStoreNames.contains(MAPS_STORE)) {
+      db.createObjectStore(MAPS_STORE, { keyPath: 'id' });
+    }
+    if (!db.objectStoreNames.contains(PLAYLISTS_STORE)) {
+      db.createObjectStore(PLAYLISTS_STORE, { keyPath: 'id' });
+    }
+    const membershipStore = db.objectStoreNames.contains(PLAYLIST_LINEUPS_STORE)
+      ? transaction?.objectStore(PLAYLIST_LINEUPS_STORE)
+      : db.createObjectStore(PLAYLIST_LINEUPS_STORE, { keyPath: 'id' });
+    if (membershipStore && !membershipStore.indexNames.contains('playlistId')) {
+      membershipStore.createIndex('playlistId', 'playlistId', { unique: false });
+    }
+    if (membershipStore && !membershipStore.indexNames.contains('lineupId')) {
+      membershipStore.createIndex('lineupId', 'lineupId', { unique: false });
+    }
   }
 
   private getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
@@ -654,6 +1067,60 @@ export class WebLineupStorage implements LineupStoragePort {
 
   private safeFileName(name: string): string {
     return name.replace(/[^\w.-]+/g, '_');
+  }
+
+  private async loadMembershipRecords(indexName: 'playlistId' | 'lineupId', value: string): Promise<PlaylistLineupRecord[]> {
+    if (!this.hasIndexedDb()) {
+      return [];
+    }
+
+    const db = await this.openDb();
+    return new Promise((resolve, reject) => {
+      const request = db
+        .transaction(PLAYLIST_LINEUPS_STORE, 'readonly')
+        .objectStore(PLAYLIST_LINEUPS_STORE)
+        .index(indexName)
+        .getAll(IDBKeyRange.only(value));
+      request.onsuccess = () => resolve(request.result as PlaylistLineupRecord[]);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  private playlistLineupRecord(playlistId: string, lineupId: string): PlaylistLineupRecord {
+    return {
+      id: `${playlistId}:${lineupId}`,
+      playlistId,
+      lineupId,
+    };
+  }
+
+  private groupMemberships(memberships: PlaylistLineupRecord[]): Record<string, string[]> {
+    const grouped: Record<string, string[]> = {};
+    for (const membership of memberships) {
+      grouped[membership.playlistId] = [...(grouped[membership.playlistId] ?? []), membership.lineupId];
+    }
+    return grouped;
+  }
+
+  private toPlaylistRecord(playlist: StoredPlaylist): PlaylistRecord {
+    const { thumbnailUrl, lineupIds, ...record } = playlist;
+    void thumbnailUrl;
+    void lineupIds;
+    return record;
+  }
+
+  private toLineupSummary(point: PointRecord): StoredLineupSummary {
+    const mediaRoles = Array.from(new Set(point.media.map((media) => media.role ?? 'detail')));
+    return {
+      ...point,
+      resultSpotId: point.resultSpotId ?? point.id,
+      media: [],
+      requirements: [],
+      trajectory: { vertices: [] },
+      mediaCount: point.media.length,
+      mediaRoles,
+      hasTrajectory: Boolean(point.trajectory?.vertices.length),
+    };
   }
 
   private pointsToResultSpots(points: StoredPoint[]): StoredResultSpotWithLineups[] {
@@ -758,6 +1225,10 @@ type MediaRow = Omit<StoredMedia, 'blob' | 'url'> & {
 
 type MapRow = Omit<StoredMap, 'imageBlob' | 'imageUrl'> & {
   imagePath: string;
+};
+
+type PlaylistRow = Omit<StoredPlaylist, 'thumbnailBlob' | 'thumbnailUrl'> & {
+  thumbnailPath: string;
 };
 
 class DesktopLineupStorage implements LineupStoragePort {
@@ -878,6 +1349,123 @@ class DesktopLineupStorage implements LineupStoragePort {
     } satisfies StoredPoint)));
   }
 
+  async loadLineupSummaries(mapId?: string, levelId?: string): Promise<StoredLineupSummary[]> {
+    const db = await this.db();
+    const filters: string[] = [];
+    const params: string[] = [];
+    if (mapId) {
+      params.push(mapId);
+      filters.push(`lineups.mapId = $${params.length}`);
+    }
+    if (levelId) {
+      params.push(levelId);
+      filters.push(`lineups.levelId = $${params.length}`);
+    }
+
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const rows = await db.select<Array<LineupRow & { mediaCount?: number; mediaRoles?: string }>>(
+      `SELECT lineups.*,
+        COUNT(lineup_media.mediaId) AS mediaCount,
+        GROUP_CONCAT(DISTINCT lineup_media.role) AS mediaRoles
+      FROM lineups
+      LEFT JOIN lineup_media ON lineup_media.lineupId = lineups.id
+      ${where}
+      GROUP BY lineups.id
+      ORDER BY lineups.id`,
+      params,
+    );
+
+    return rows.map((lineup) => this.toLineupSummary(lineup));
+  }
+
+  async loadResultSpotLineups(resultSpotId: string, mapId: string, levelId: string): Promise<StoredLineupSummary[]> {
+    const rows = await this.loadLineupSummaries(mapId, levelId);
+    return rows.filter((lineup) => (lineup.resultSpotId ?? lineup.id) === resultSpotId);
+  }
+
+  async loadLineupDetails(lineupId: string): Promise<StoredPoint | undefined> {
+    const db = await this.db();
+    const lineups = await db.select<LineupRow[]>('SELECT * FROM lineups WHERE id = $1 LIMIT 1', [lineupId]);
+    const lineup = lineups[0];
+    if (!lineup) {
+      return undefined;
+    }
+
+    const mediaRows = await db.select<Array<MediaRow & { lineupId: string }>>(
+      `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType, media_assets.path,
+        media_assets.createdAt, lineup_media.role, lineup_media.sortOrder, lineup_media.lineupId
+      FROM lineup_media
+      JOIN media_assets ON media_assets.id = lineup_media.mediaId
+      WHERE lineup_media.lineupId = $1
+      ORDER BY lineup_media.sortOrder`,
+      [lineupId],
+    );
+
+    return {
+      id: lineup.id,
+      resultSpotId: lineup.resultSpotId ?? lineup.id,
+      label: lineup.label,
+      mapId: lineup.mapId,
+      levelId: lineup.levelId,
+      x: lineup.x,
+      y: lineup.y,
+      kind: 'custom',
+      grenadeCategoryId: lineup.grenadeCategoryId,
+      teamSide: lineup.teamSide,
+      title: lineup.title,
+      description: lineup.description ?? '',
+      requirements: this.parseJson<string[]>(lineup.requirementsJson, []),
+      heroMediaId: lineup.heroMediaId,
+      trajectory: this.parseJson<StoredTrajectory>(lineup.trajectoryJson, { vertices: [] }),
+      media: mediaRows.map((media) => ({
+        id: media.id,
+        name: media.name,
+        type: media.type,
+        mimeType: media.mimeType,
+        blob: new Blob(),
+        url: '',
+        role: media.role ?? 'detail',
+        createdAt: media.createdAt,
+        sourceLineupId: media.lineupId,
+        sourceLineupTitle: lineup.title,
+      })),
+      createdAt: lineup.createdAt,
+      updatedAt: lineup.updatedAt,
+    };
+  }
+
+  async loadLineupMedia(lineupId: string): Promise<StoredMedia[]> {
+    const db = await this.db();
+    const workspace = await this.workspace();
+    const rows = await db.select<Array<MediaRow & { lineupId: string; sourceLineupTitle?: string }>>(
+      `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType, media_assets.path,
+        media_assets.createdAt, lineup_media.role, lineup_media.sortOrder, lineup_media.lineupId,
+        lineups.title AS sourceLineupTitle
+      FROM lineup_media
+      JOIN media_assets ON media_assets.id = lineup_media.mediaId
+      LEFT JOIN lineups ON lineups.id = lineup_media.lineupId
+      WHERE lineup_media.lineupId = $1
+      ORDER BY lineup_media.sortOrder`,
+      [lineupId],
+    );
+
+    return Promise.all(rows.map(async (media) => {
+      const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+      return {
+        id: media.id,
+        name: media.name,
+        type: media.type,
+        mimeType: media.mimeType,
+        blob,
+        url: URL.createObjectURL(blob),
+        role: media.role ?? 'detail',
+        createdAt: media.createdAt,
+        sourceLineupId: media.lineupId,
+        sourceLineupTitle: media.sourceLineupTitle,
+      } satisfies StoredMedia;
+    }));
+  }
+
   async savePoint(point: StoredPoint): Promise<void> {
     const db = await this.db();
     const workspace = await this.workspace([point.mapId]);
@@ -907,12 +1495,14 @@ class DesktopLineupStorage implements LineupStoragePort {
 
   async deletePoint(pointId: string): Promise<void> {
     const db = await this.db();
+    await db.execute('DELETE FROM playlist_lineups WHERE lineupId = $1', [pointId]);
     await db.execute('DELETE FROM lineup_media WHERE lineupId = $1', [pointId]);
     await db.execute('DELETE FROM lineups WHERE id = $1', [pointId]);
   }
 
   async replaceAll(points: StoredPoint[]): Promise<void> {
     const db = await this.db();
+    await db.execute('DELETE FROM playlist_lineups');
     await db.execute('DELETE FROM lineup_media');
     await db.execute('DELETE FROM lineups');
     for (const point of points) {
@@ -962,6 +1552,120 @@ class DesktopLineupStorage implements LineupStoragePort {
 
   deleteLineupVariant(lineupId: string): Promise<void> {
     return this.deletePoint(lineupId);
+  }
+
+  async loadPlaylists(): Promise<StoredPlaylist[]> {
+    const db = await this.db();
+    const workspace = await this.workspace();
+    const rows = await db.select<PlaylistRow[]>('SELECT * FROM playlists ORDER BY updatedAt DESC, createdAt DESC');
+    return Promise.all(rows.map(async (row) => {
+      const blob = await this.readBlob(workspace.rootDir, row.thumbnailPath, row.thumbnailMimeType);
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        thumbnailName: row.thumbnailName,
+        thumbnailMimeType: row.thumbnailMimeType,
+        thumbnailBlob: blob,
+        thumbnailUrl: URL.createObjectURL(blob),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      };
+    }));
+  }
+
+  async savePlaylist(playlist: StoredPlaylist): Promise<void> {
+    const db = await this.db();
+    const workspace = await this.workspace(['playlists']);
+    const now = new Date().toISOString();
+    const thumbnailPath = `Content/Playlists/${this.safeFolderName(playlist.id)}/${this.safeFileName(playlist.thumbnailName)}`;
+    await this.writeBlob(workspace.rootDir, thumbnailPath, playlist.thumbnailBlob);
+    await db.execute(
+      `INSERT INTO playlists (
+        id, title, description, thumbnailName, thumbnailMimeType, thumbnailPath, createdAt, updatedAt
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      ON CONFLICT(id) DO UPDATE SET
+        title=excluded.title,
+        description=excluded.description,
+        thumbnailName=excluded.thumbnailName,
+        thumbnailMimeType=excluded.thumbnailMimeType,
+        thumbnailPath=excluded.thumbnailPath,
+        updatedAt=excluded.updatedAt`,
+      [
+        playlist.id,
+        playlist.title,
+        playlist.description,
+        playlist.thumbnailName,
+        playlist.thumbnailMimeType,
+        thumbnailPath,
+        playlist.createdAt ?? now,
+        now,
+      ],
+    );
+  }
+
+  async deletePlaylist(playlistId: string, deleteContent = false): Promise<void> {
+    const lineupIds = deleteContent ? await this.loadPlaylistLineupIds(playlistId) : [];
+    await Promise.all(lineupIds.map((lineupId) => this.deletePoint(lineupId)));
+    const db = await this.db();
+    await db.execute('DELETE FROM playlist_lineups WHERE playlistId = $1', [playlistId]);
+    await db.execute('DELETE FROM playlists WHERE id = $1', [playlistId]);
+  }
+
+  async loadPlaylistLineupIds(playlistId: string): Promise<string[]> {
+    const db = await this.db();
+    const rows = await db.select<Array<{ lineupId: string }>>(
+      'SELECT lineupId FROM playlist_lineups WHERE playlistId = $1 ORDER BY lineupId',
+      [playlistId],
+    );
+    return rows.map((row) => row.lineupId);
+  }
+
+  async loadLineupPlaylistIds(lineupId: string): Promise<string[]> {
+    const db = await this.db();
+    const rows = await db.select<Array<{ playlistId: string }>>(
+      'SELECT playlistId FROM playlist_lineups WHERE lineupId = $1 ORDER BY playlistId',
+      [lineupId],
+    );
+    return rows.map((row) => row.playlistId);
+  }
+
+  async loadPlaylistMemberships(): Promise<Record<string, string[]>> {
+    const db = await this.db();
+    const rows = await db.select<Array<{ playlistId: string; lineupId: string }>>(
+      'SELECT playlistId, lineupId FROM playlist_lineups ORDER BY playlistId, lineupId',
+    );
+    const grouped: Record<string, string[]> = {};
+    for (const row of rows) {
+      grouped[row.playlistId] = [...(grouped[row.playlistId] ?? []), row.lineupId];
+    }
+    return grouped;
+  }
+
+  async setPlaylistLineups(playlistId: string, lineupIds: string[]): Promise<void> {
+    const db = await this.db();
+    await db.execute('DELETE FROM playlist_lineups WHERE playlistId = $1', [playlistId]);
+    for (const lineupId of Array.from(new Set(lineupIds))) {
+      await db.execute(
+        `INSERT INTO playlist_lineups (playlistId, lineupId)
+        VALUES ($1,$2)
+        ON CONFLICT(playlistId, lineupId) DO NOTHING`,
+        [playlistId, lineupId],
+      );
+    }
+  }
+
+  async setLineupPlaylists(lineupId: string, playlistIds: string[]): Promise<void> {
+    const db = await this.db();
+    await db.execute('DELETE FROM playlist_lineups WHERE lineupId = $1', [lineupId]);
+    for (const playlistId of Array.from(new Set(playlistIds))) {
+      await db.execute(
+        `INSERT INTO playlist_lineups (playlistId, lineupId)
+        VALUES ($1,$2)
+        ON CONFLICT(playlistId, lineupId) DO NOTHING`,
+        [playlistId, lineupId],
+      );
+    }
   }
 
   async loadMediaAssets(): Promise<StoredMedia[]> {
@@ -1024,15 +1728,20 @@ class DesktopLineupStorage implements LineupStoragePort {
     );
   }
 
-  exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
-    return this.zipStorage.exportZip(points, maps);
+  exportZip(
+    points: StoredPoint[],
+    maps: StoredMap[] = [],
+    playlists: StoredPlaylist[] = [],
+    playlistMemberships: Record<string, string[]> = {},
+  ): Promise<Blob> {
+    return this.zipStorage.exportZip(points, maps, playlists, playlistMemberships);
   }
 
   importZip(file: File): Promise<StoredPoint[]> {
     return this.zipStorage.importZip(file);
   }
 
-  importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }> {
+  importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[]; playlists?: StoredPlaylist[] }> {
     return this.zipStorage.importZipData(file);
   }
 
@@ -1184,11 +1893,26 @@ class DesktopLineupStorage implements LineupStoragePort {
       imageMimeType TEXT NOT NULL,
       imagePath TEXT NOT NULL
     )`);
+    await db.execute(`CREATE TABLE IF NOT EXISTS playlists (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      thumbnailName TEXT NOT NULL,
+      thumbnailMimeType TEXT NOT NULL,
+      thumbnailPath TEXT NOT NULL,
+      createdAt TEXT,
+      updatedAt TEXT
+    )`);
+    await db.execute(`CREATE TABLE IF NOT EXISTS playlist_lineups (
+      playlistId TEXT NOT NULL,
+      lineupId TEXT NOT NULL,
+      PRIMARY KEY (playlistId, lineupId)
+    )`);
     await db.execute('CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
     await db.execute(
       `INSERT INTO app_meta (key, value) VALUES ($1, $2)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      ['schemaVersion', '2'],
+      ['schemaVersion', '3'],
     );
   }
 
@@ -1334,6 +2058,35 @@ class DesktopLineupStorage implements LineupStoragePort {
     return name.replace(/[^\w.-]+/g, '_');
   }
 
+  private toLineupSummary(lineup: LineupRow & { mediaCount?: number; mediaRoles?: string }): StoredLineupSummary {
+    const trajectory = this.parseJson<StoredTrajectory>(lineup.trajectoryJson, { vertices: [] });
+    return {
+      id: lineup.id,
+      resultSpotId: lineup.resultSpotId ?? lineup.id,
+      label: lineup.label,
+      mapId: lineup.mapId,
+      levelId: lineup.levelId,
+      x: lineup.x,
+      y: lineup.y,
+      kind: 'custom',
+      grenadeCategoryId: lineup.grenadeCategoryId,
+      teamSide: lineup.teamSide,
+      title: lineup.title,
+      description: lineup.description ?? '',
+      heroMediaId: lineup.heroMediaId,
+      requirements: [],
+      media: [],
+      trajectory: { vertices: [] },
+      mediaCount: Number(lineup.mediaCount ?? 0),
+      mediaRoles: (lineup.mediaRoles ?? '')
+        .split(',')
+        .filter((role): role is MediaRole => role === 'start' || role === 'result' || role === 'detail'),
+      hasTrajectory: trajectory.vertices.length > 0,
+      createdAt: lineup.createdAt,
+      updatedAt: lineup.updatedAt,
+    };
+  }
+
   private safeFolderName(name: string): string {
     const safeName = name.replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '_').replace(/\s+/g, ' ').trim();
     return safeName || '_Unknown';
@@ -1413,16 +2166,98 @@ export class LineupStorage implements LineupStoragePort {
     return this.activeStorage().then((storage) => storage.replaceAllMaps(maps));
   }
 
-  async exportZip(points: StoredPoint[], maps: StoredMap[] = []): Promise<Blob> {
-    return this.activeStorage().then((storage) => storage.exportZip(points, maps));
+  async exportZip(
+    points: StoredPoint[],
+    maps: StoredMap[] = [],
+    playlists: StoredPlaylist[] = [],
+    playlistMemberships: Record<string, string[]> = {},
+  ): Promise<Blob> {
+    return this.activeStorage().then((storage) => storage.exportZip(points, maps, playlists, playlistMemberships));
   }
 
   async importZip(file: File): Promise<StoredPoint[]> {
     return this.activeStorage().then((storage) => storage.importZip(file));
   }
 
-  async importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[] }> {
+  async importZipData(file: File): Promise<{ maps: StoredMap[]; points: StoredPoint[]; playlists?: StoredPlaylist[] }> {
     return this.activeStorage().then((storage) => storage.importZipData(file));
+  }
+
+  async loadPlaylists(): Promise<StoredPlaylist[]> {
+    const storage = await this.activeStorage();
+    return storage.loadPlaylists?.() ?? [];
+  }
+
+  async savePlaylist(playlist: StoredPlaylist): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.savePlaylist?.(playlist);
+  }
+
+  async deletePlaylist(playlistId: string, deleteContent = false): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.deletePlaylist?.(playlistId, deleteContent);
+  }
+
+  async loadPlaylistLineupIds(playlistId: string): Promise<string[]> {
+    const storage = await this.activeStorage();
+    return storage.loadPlaylistLineupIds?.(playlistId) ?? [];
+  }
+
+  async loadLineupPlaylistIds(lineupId: string): Promise<string[]> {
+    const storage = await this.activeStorage();
+    return storage.loadLineupPlaylistIds?.(lineupId) ?? [];
+  }
+
+  async loadPlaylistMemberships(): Promise<Record<string, string[]>> {
+    const storage = await this.activeStorage();
+    return storage.loadPlaylistMemberships?.() ?? {};
+  }
+
+  async setPlaylistLineups(playlistId: string, lineupIds: string[]): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.setPlaylistLineups?.(playlistId, lineupIds);
+  }
+
+  async setLineupPlaylists(lineupId: string, playlistIds: string[]): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.setLineupPlaylists?.(lineupId, playlistIds);
+  }
+
+  async loadLineupSummaries(mapId?: string, levelId?: string): Promise<StoredLineupSummary[]> {
+    const storage = await this.activeStorage();
+    return storage.loadLineupSummaries?.(mapId, levelId) ?? storage.loadPoints();
+  }
+
+  async loadResultSpotLineups(resultSpotId: string, mapId: string, levelId: string): Promise<StoredLineupSummary[]> {
+    const storage = await this.activeStorage();
+    if (storage.loadResultSpotLineups) {
+      return storage.loadResultSpotLineups(resultSpotId, mapId, levelId);
+    }
+
+    const points = await storage.loadPoints();
+    return points.filter((point) => (
+      (point.resultSpotId ?? point.id) === resultSpotId &&
+      point.mapId === mapId &&
+      point.levelId === levelId
+    ));
+  }
+
+  async loadLineupDetails(lineupId: string): Promise<StoredPoint | undefined> {
+    const storage = await this.activeStorage();
+    if (storage.loadLineupDetails) {
+      return storage.loadLineupDetails(lineupId);
+    }
+
+    return (await storage.loadPoints()).find((point) => point.id === lineupId);
+  }
+
+  async loadLineupMedia(lineupId: string): Promise<StoredMedia[]> {
+    const storage = await this.activeStorage();
+    if (storage.loadLineupMedia) {
+      return storage.loadLineupMedia(lineupId);
+    }
+
+    return (await storage.loadPoints()).find((point) => point.id === lineupId)?.media ?? [];
   }
 
   async loadResultSpotsWithLineups(): Promise<StoredResultSpotWithLineups[]> {

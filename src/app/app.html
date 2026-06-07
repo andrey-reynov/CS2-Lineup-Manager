@@ -241,20 +241,24 @@
           >
             <div class="map-surface">
               <div
-                class="map-content"
-                [style.transform]="'translate(' + mapPan().x + 'px, ' + mapPan().y + 'px) scale(' + mapZoom() + ')'"
+                class="map-image-layer"
+                [style.transform]="mapImageTransform()"
               >
                 <img
                   class="map-image"
                   [src]="level.imageUrl"
                   [alt]="map.name + ' radar, ' + level.name"
                 />
+              </div>
 
+              <div class="map-overlay-layer">
                 @if (selectedPoint(); as selected) {
                   @if (selectedTrajectoryPoints().length > 1) {
                     <svg class="trajectory-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                      <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPoints()"></polyline>
-                      <polyline class="trajectory-line" [attr.points]="trajectorySvgPoints()"></polyline>
+                      <g [attr.transform]="trajectorySvgTransform()">
+                        <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPoints()"></polyline>
+                        <polyline class="trajectory-line" [attr.points]="trajectorySvgPoints()"></polyline>
+                      </g>
                     </svg>
 
                     @if (selectedPointMode() === 'edit') {
@@ -263,8 +267,8 @@
                           class="trajectory-midpoint"
                           type="button"
                           [class.is-hovered]="isTrajectorySegmentHovered(midpoint.index)"
-                          [style.left.%]="midpoint.x"
-                          [style.top.%]="midpoint.y"
+                          [style.left]="mapOverlayLeft(midpoint)"
+                          [style.top]="mapOverlayTop(midpoint)"
                           aria-label="Insert trajectory point"
                           (pointerenter)="setHoveredTrajectorySegment(midpoint.index)"
                           (pointerleave)="setHoveredTrajectorySegment(null)"
@@ -280,8 +284,8 @@
                         [class.is-start]="isLast"
                         [class.is-selected]="isTrajectoryVertexSelected(vertex.id)"
                         [class.is-dragging]="isDraggingTrajectoryVertex(vertex.id)"
-                        [style.left.%]="vertex.x"
-                        [style.top.%]="vertex.y"
+                        [style.left]="mapOverlayLeft(vertex)"
+                        [style.top]="mapOverlayTop(vertex)"
                         [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
                         (pointerdown)="startTrajectoryVertexDrag(vertex.id, $event)"
                         (click)="appendTrajectoryFromVertex(vertex.id, $event)"
@@ -306,8 +310,8 @@
                     [class.is-ct]="point.teamSide === 'ct'"
                     [class.is-t]="point.teamSide === 't'"
                     [class.is-dragging]="isDraggingResultPoint(point.id)"
-                    [style.left.%]="point.x"
-                    [style.top.%]="point.y"
+                    [style.left]="mapOverlayLeft(point)"
+                    [style.top]="mapOverlayTop(point)"
                     [attr.aria-label]="point.label + ': ' + point.x.toFixed(1) + ', ' + point.y.toFixed(1)"
                     (pointerdown)="startResultPointDrag(point, $event)"
                     (click)="openPointEditor(point, $event)"
@@ -384,7 +388,17 @@
                     [style.--icon-url]="selectedGrenadeOption().isLocalIcon ? 'url(' + selectedGrenadeOption().iconUrl + ')' : null"
                     [style.mask-image]="selectedGrenadeOption().isLocalIcon ? null : 'url(' + selectedGrenadeOption().iconUrl + ')'"
                     [style.-webkit-mask-image]="selectedGrenadeOption().isLocalIcon ? null : 'url(' + selectedGrenadeOption().iconUrl + ')'"
-                  ></span>
+                    ></span>
+                </button>
+                <i class="rail-divider" aria-hidden="true"></i>
+                <button
+                  class="rail-compact-button playlist-rail-button"
+                  type="button"
+                  [class.is-active]="selectedPlaylistIds().length > 0 || playlistPanelOpen()"
+                  [attr.aria-label]="'Playlist filter: ' + selectedPlaylistFilterText() + ' ' + selectedPlaylistFilterLabel()"
+                  (click)="openPlaylistPanel($event)"
+                >
+                  <strong>{{ selectedPlaylistFilterText() }}</strong>
                 </button>
 
                 @if (activeRailPopover(); as popover) {
@@ -512,6 +526,18 @@
                     </button>
                   }
                 </div>
+                <i class="rail-divider" aria-hidden="true"></i>
+                <div class="playlist-filter" aria-label="Playlists">
+                  <button
+                    class="playlist-rail-button"
+                    type="button"
+                    [class.is-active]="selectedPlaylistIds().length > 0 || playlistPanelOpen()"
+                    (click)="openPlaylistPanel($event)"
+                  >
+                    <strong>{{ selectedPlaylistFilterText() }}</strong>
+                    <small>{{ selectedPlaylistFilterLabel() }}</small>
+                  </button>
+                </div>
               }
             </div>
 
@@ -565,7 +591,204 @@
         }
       }
 
-      @if (selectedPoint(); as point) {
+      @if (playlistPanelOpen()) {
+        <aside class="point-details playlist-panel" aria-label="Playlists" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
+          <div
+            class="panel-resize-edge is-right"
+            role="separator"
+            aria-label="Resize playlist panel"
+            (pointerdown)="startPanelResize('right', $event)"
+          ></div>
+
+          @if (playlistPanelMode() === 'list') {
+            <div class="point-details-header">
+              <span>Playlists</span>
+              <button type="button" aria-label="Close" (click)="closePlaylistPanel()">
+                <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
+              </button>
+            </div>
+
+            <div class="lineup-choice-list" aria-label="Playlist list">
+              @for (playlist of playlists(); track playlist.id) {
+                <button
+                  type="button"
+                  class="lineup-choice-card playlist-card"
+                  [class.is-active]="isPlaylistFilterSelected(playlist.id)"
+                  (click)="openPlaylistDetail(playlist, $event)"
+                >
+                  <span class="lineup-choice-copy">
+                    <strong>{{ playlist.title }}</strong>
+                    <small>
+                      {{ playlistLineupCount(playlist.id) }}
+                      {{ playlistLineupCount(playlist.id) === 1 ? 'lineup' : 'lineups' }}
+                    </small>
+                  </span>
+                  <span class="lineup-choice-preview">
+                    <img [src]="playlist.thumbnailUrl" [alt]="playlist.title" />
+                  </span>
+                </button>
+              } @empty {
+                <p class="playlist-empty">No playlists yet</p>
+              }
+
+              <button type="button" class="lineup-choice-card playlist-create-card" (click)="createPlaylist($event)">
+                <span class="lineup-choice-copy">
+                  <strong>Create playlist</strong>
+                  <small>Create a list of lineups for easier filtering</small>
+                </span>
+                <span class="lineup-choice-preview is-empty">
+                  <em>New</em>
+                </span>
+              </button>
+            </div>
+          } @else if (playlistPanelMode() === 'detail') {
+            @if (selectedPlaylist(); as playlist) {
+              <div class="point-details-header has-back">
+                <button type="button" aria-label="Back to playlists" (click)="backToPlaylistList($event)">
+                  <span class="ui-icon" style="--icon-url: url('/icons/left_arrow_outline.svg')" aria-hidden="true"></span>
+                </button>
+                <span>{{ playlist.title }}</span>
+                <button type="button" aria-label="Close" (click)="closePlaylistPanel()">
+                  <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                class="playlist-filter-toggle"
+                [class.is-active]="isPlaylistFilterSelected(playlist.id)"
+                (click)="togglePlaylistFilter(playlist.id)"
+              >
+                <span
+                  class="ui-icon"
+                  style="--icon-url: url('/icons/check_outline.svg')"
+                  aria-hidden="true"
+                ></span>
+                {{ isPlaylistFilterSelected(playlist.id) ? 'Selected in filter' : 'Select in filter' }}
+              </button>
+
+              <div class="playlist-hero">
+                <img [src]="playlist.thumbnailUrl" [alt]="playlist.title" />
+                @if (playlist.description) {
+                  <p>{{ playlist.description }}</p>
+                }
+              </div>
+
+              <div class="playlist-lineup-list" aria-label="Playlist lineups">
+                @for (lineup of selectedPlaylistMemberLineups(); track lineup.id) {
+                  <div class="lineup-choice-card playlist-lineup-card">
+                    <label>
+                      <input
+                        type="checkbox"
+                        [checked]="isLineupInSelectedPlaylist(lineup.id)"
+                        (change)="toggleSelectedPlaylistLineup(lineup.id, $any($event.target).checked)"
+                      />
+                    </label>
+                    <button type="button" (click)="openPlaylistLineupPreview(lineup, $event)">
+                      <span class="lineup-choice-copy">
+                        <strong>{{ displayTitle(lineup) }}</strong>
+                        <small>{{ startPoint(lineup) ? 'Start set' : 'No start point' }}</small>
+                      </span>
+                      <span class="lineup-choice-preview" [class.is-empty]="!guideSlotMedia(lineup, 'start')">
+                        @if (guideSlotMedia(lineup, 'start'); as media) {
+                          @if (media.type === 'image') {
+                            <img [src]="media.url" [alt]="media.name" />
+                          } @else {
+                            <video [src]="media.url" muted></video>
+                          }
+                        } @else {
+                          <em>Start</em>
+                        }
+                      </span>
+                    </button>
+                  </div>
+                } @empty {
+                  <p class="playlist-empty">No lineups in this playlist</p>
+                }
+              </div>
+
+              <div class="lineup-detail-actions">
+                <button type="button" class="edit-button" (click)="saveSelectedPlaylistLineups($event)">
+                  <span class="ui-icon" style="--icon-url: url('/icons/save_fill.svg')" aria-hidden="true"></span>
+                  Save
+                </button>
+                <button type="button" class="edit-button is-secondary" (click)="editSelectedPlaylist($event)">
+                  <span class="ui-icon" style="--icon-url: url('/icons/edit_outline.svg')" aria-hidden="true"></span>
+                  Edit
+                </button>
+              </div>
+            }
+          } @else if (playlistPanelMode() === 'edit') {
+            @if (playlistDraft(); as draft) {
+              <div class="point-details-header has-back">
+                <button type="button" aria-label="Back to playlists" (click)="selectedPlaylist() ? openPlaylistDetail(selectedPlaylist()!, $event) : backToPlaylistList($event)">
+                  <span class="ui-icon" style="--icon-url: url('/icons/left_arrow_outline.svg')" aria-hidden="true"></span>
+                </button>
+                <span>{{ selectedPlaylist() ? 'Edit playlist' : 'New playlist' }}</span>
+                <button type="button" aria-label="Close" (click)="closePlaylistPanel()">
+                  <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
+                </button>
+              </div>
+
+              <label class="field">
+                <span>Title</span>
+                <input
+                  type="text"
+                  [value]="draft.title"
+                  placeholder="Example: Shroud lineups"
+                  (input)="updatePlaylistDraftTitle($any($event.target).value)"
+                  (blur)="updatePlaylistDraftGeneratedThumbnail()"
+                />
+              </label>
+
+              <label class="field">
+                <span>Description</span>
+                <textarea
+                  [value]="draft.description"
+                  placeholder="Notes about this playlist"
+                  (input)="updatePlaylistDraftDescription($any($event.target).value)"
+                ></textarea>
+              </label>
+
+              <div class="field">
+                <span>Thumbnail</span>
+                <div class="playlist-thumbnail-actions">
+                  <label class="playlist-thumbnail-upload" [class.has-image]="draft.thumbnailUrl">
+                    <input type="file" accept="image/*" (change)="onPlaylistThumbnailSelected($event)" />
+                    @if (draft.thumbnailUrl) {
+                      <img [src]="draft.thumbnailUrl" [alt]="draft.title || 'Playlist thumbnail'" />
+                    } @else {
+                      <span>{{ draft.title.trim() ? 'Leave title to generate' : 'Choose image' }}</span>
+                    }
+                  </label>
+                  @if (draft.thumbnailUrl) {
+                    <button type="button" class="ui-button" (click)="openPlaylistThumbnailImageEditor($event)">
+                      <span class="ui-icon" style="--icon-url: url('/icons/paint_fill.svg')" aria-hidden="true"></span>
+                      Edit thumbnail
+                    </button>
+                  }
+                </div>
+              </div>
+
+              @if (playlistSaveError()) {
+                <p class="settings-error">{{ playlistSaveError() }}</p>
+              }
+
+              <div class="point-actions" [class.is-single]="!selectedPlaylist()">
+                <button type="button" class="save-button" [disabled]="!canSavePlaylistDraft()" (click)="savePlaylistDraft($event)">
+                  <span class="ui-icon" style="--icon-url: url('/icons/save_fill.svg')" aria-hidden="true"></span>
+                  Save
+                </button>
+                @if (selectedPlaylist()) {
+                  <button type="button" class="delete-button" aria-label="Delete" title="Delete playlist" (click)="requestPlaylistDelete(false)">
+                    <span class="ui-icon" style="--icon-url: url('/icons/delete_outline.svg')" aria-hidden="true"></span>
+                  </button>
+                }
+              </div>
+            }
+          }
+        </aside>
+      } @else if (selectedPoint(); as point) {
         @if (selectedPointMode() === 'view' && lineupChooserOpen() && selectedResultSpotVariants().length > 1) {
           <aside class="point-details is-view is-lineup-chooser" aria-label="Lineup variants" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
             <div
@@ -608,6 +831,14 @@
               }
             </div>
 
+            @if (selectedPointIsHydrating()) {
+              <div class="lineup-skeleton" aria-label="Loading lineup details">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            }
+
             <div class="lineup-detail-actions">
               <button type="button" class="edit-button is-secondary" (click)="addLineupVariantFromSelected($event)">
                 Add lineup variant
@@ -633,6 +864,14 @@
                 <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
               </button>
             </div>
+
+            @if (selectedPointIsHydrating()) {
+              <div class="lineup-skeleton" aria-label="Loading lineup details">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            }
 
             <button
               class="guide-slot"
@@ -741,6 +980,39 @@
                 (input)="updateSelectedPointDescription($any($event.target).value)"
               ></textarea>
             </label>
+
+            <div class="field playlist-assignment">
+              <span>Playlists</span>
+              <button
+                class="playlist-assignment-button"
+                type="button"
+                [class.is-open]="playlistAssignmentOpen()"
+                (click)="playlistAssignmentOpen() ? closePlaylistAssignment() : openPlaylistAssignment(); $event.stopPropagation()"
+              >
+                <span
+                  class="ui-icon"
+                  style="--icon-url: url('/icons/doc_list_outline.svg')"
+                  aria-hidden="true"
+                ></span>
+                {{ selectedLineupPlaylistIds().length === 0 ? 'No playlists' : selectedLineupPlaylistIds().length + ' selected' }}
+              </button>
+              @if (playlistAssignmentOpen()) {
+                <div class="playlist-assignment-menu" (click)="$event.stopPropagation()">
+                  @for (playlist of playlists(); track playlist.id) {
+                    <label>
+                      <input
+                        type="checkbox"
+                        [checked]="isSelectedLineupInPlaylist(playlist.id)"
+                        (change)="togglePlaylistAssignment(playlist.id, $any($event.target).checked)"
+                      />
+                      <span>{{ playlist.title }}</span>
+                    </label>
+                  } @empty {
+                    <p>No playlists yet</p>
+                  }
+                </div>
+              }
+            </div>
 
             <div class="field">
               <span>Media</span>
@@ -903,6 +1175,7 @@
             (click)="$event.stopPropagation()"
           >
             @if (media.type === 'image') {
+              <button type="button" (click)="openContextImageEditor($event)">Edit</button>
               <button type="button" (click)="assignContextMediaRole('start', $event)">Start</button>
               <button type="button" (click)="assignContextMediaRole('result', $event)">Result</button>
             }
@@ -926,6 +1199,64 @@
     </div>
   </section>
 </main>
+
+@if (playlistDeleteConfirmation(); as confirmation) {
+  @if (selectedPlaylist(); as playlist) {
+    <div class="playlist-delete-modal" role="dialog" aria-modal="true" aria-label="Delete playlist" (click)="playlistDeleteConfirmation.set(null)">
+      <section (click)="$event.stopPropagation()">
+        @if (confirmation.secondStep) {
+          <h2>Delete playlist content?</h2>
+          <p>
+            This will delete the playlist and all lineups inside it. Those lineups will no longer be available after
+            {{ playlist.title }} is gone.
+          </p>
+          <div class="playlist-delete-actions">
+            <button type="button" class="ui-button" (click)="playlistDeleteConfirmation.set(null)">Cancel</button>
+            <button type="button" class="ui-button is-danger" (click)="confirmPlaylistDelete()">Delete playlist and lineups</button>
+          </div>
+        } @else {
+          <h2>Delete playlist</h2>
+          <p>{{ playlist.title }}</p>
+          <label class="settings-toggle playlist-delete-toggle">
+            <span>
+              <strong>Delete content too</strong>
+              <small>Also delete every lineup in this playlist.</small>
+            </span>
+            <input
+              type="checkbox"
+              [checked]="confirmation.deleteContent"
+              (change)="requestPlaylistDelete($any($event.target).checked)"
+            />
+          </label>
+          @if (confirmation.deleteContent) {
+            <label class="field">
+              <span>Type: {{ playlistDeleteSlug(playlist) }}</span>
+              <input
+                type="text"
+                [value]="confirmation.slug"
+                (input)="updatePlaylistDeleteSlug($any($event.target).value)"
+              />
+            </label>
+          }
+          <label class="playlist-delete-check">
+            <input
+              type="checkbox"
+              [checked]="confirmation.acknowledged"
+              (change)="updatePlaylistDeleteAcknowledged($any($event.target).checked)"
+            />
+            <span>I really want to delete this playlist</span>
+          </label>
+          <div class="playlist-delete-actions">
+            <button type="button" class="ui-button" (click)="playlistDeleteConfirmation.set(null)">Cancel</button>
+            <button type="button" class="ui-button is-danger" [disabled]="!canConfirmPlaylistDelete()" (click)="confirmPlaylistDelete()">
+              Delete
+            </button>
+          </div>
+        }
+      </section>
+    </div>
+  }
+}
 
 @if (mediaPoolOpen()) {
   <div class="media-pool-modal" role="dialog" aria-modal="true" aria-label="Media pool" (click)="closeMediaPool()">
@@ -962,6 +1293,14 @@
       </div>
     </section>
   </div>
+}
+
+@if (imageEditorMedia(); as media) {
+  <app-image-editor
+    [media]="media"
+    (cancel)="closeImageEditor()"
+    (save)="saveEditedImage($event)"
+  ></app-image-editor>
 }
 
 @if (previewMedia(); as media) {

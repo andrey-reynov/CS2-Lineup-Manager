@@ -1,0 +1,291 @@
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 32;
+}
+
+.image-editor {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  background: rgba(3, 3, 4, 0.94);
+}
+
+.image-editor-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--vscode-text);
+  background: var(--vscode-panel-bg);
+  border: 1px solid var(--vscode-border);
+  border-radius: 8px;
+  box-shadow: 0 24px 72px var(--vscode-shadow);
+}
+
+.image-editor-header,
+.image-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--vscode-control-bg) 72%, transparent);
+  border-color: var(--vscode-border-muted);
+}
+
+.image-editor-header {
+  border-bottom: 1px solid var(--vscode-border-muted);
+}
+
+.image-editor-footer {
+  border-top: 1px solid var(--vscode-border-muted);
+}
+
+.image-editor-header strong,
+.image-editor-header span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-editor-header strong {
+  color: var(--vscode-text-strong);
+  font-size: 0.88rem;
+}
+
+.image-editor-header span {
+  margin-top: 3px;
+  color: var(--vscode-text-muted);
+  font-size: 0.72rem;
+}
+
+.image-editor-icon-button,
+.image-editor-toolbar button {
+  display: grid;
+  place-items: center;
+  color: var(--vscode-text);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.image-editor-icon-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.image-editor-icon-button:hover,
+.image-editor-icon-button:focus-visible,
+.image-editor-toolbar button:hover,
+.image-editor-toolbar button:focus-visible,
+.image-editor-toolbar button.is-active {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-control-hover);
+  border-color: var(--vscode-focus-ring);
+  outline: 0;
+}
+
+.image-editor-toolbar button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.image-editor-body {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.image-editor-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 12px;
+  background: color-mix(in srgb, var(--vscode-panel-bg) 82%, #000);
+  border-right: 1px solid var(--vscode-border-muted);
+}
+
+.image-editor-tool-group {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.image-editor-tool-group button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.image-editor-tool-group .ui-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.image-editor-shape-icon {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+}
+
+.image-editor-shape-icon.is-circle {
+  border-radius: 50%;
+}
+
+.image-editor-shape-icon.is-line {
+  height: 2px;
+  border: 0;
+  background: currentColor;
+  transform: rotate(-32deg);
+}
+
+.image-editor-tool-group.is-colors {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.image-editor-color {
+  background: var(--editor-color) !important;
+}
+
+.image-editor-color.is-active {
+  box-shadow: 0 0 0 2px var(--vscode-focus-ring);
+}
+
+.image-editor-control {
+  display: grid;
+  gap: 6px;
+  color: var(--vscode-text-muted);
+  font-size: 0.7rem;
+}
+
+.image-editor-control input[type='range'] {
+  width: 100%;
+}
+
+.image-editor-control input[type='text'] {
+  min-width: 0;
+  width: 100%;
+  color: var(--vscode-text);
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 6px;
+}
+
+.image-editor-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+  background: #101014;
+}
+
+.image-editor-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  background: #1f1f24;
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  touch-action: none;
+}
+
+.image-editor-canvas.is-loading {
+  min-width: min(100%, 640px);
+  min-height: min(100%, 360px);
+}
+
+.image-editor-error {
+  position: absolute;
+  inset: auto 24px 24px;
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--vscode-text-strong);
+  font-size: 0.78rem;
+  background: var(--vscode-error-hover);
+  border: 1px solid var(--vscode-error);
+  border-radius: 6px;
+}
+
+.image-editor-save-area {
+  position: relative;
+}
+
+.image-editor-save-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  gap: 6px;
+  width: 170px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 92%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px var(--vscode-shadow);
+}
+
+.image-editor-save-menu button {
+  min-height: 32px;
+  color: var(--vscode-text);
+  font: inherit;
+  font-size: 0.76rem;
+  background: var(--vscode-control-bg);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.image-editor-save-menu button:hover,
+.image-editor-save-menu button:focus-visible {
+  color: var(--vscode-text-strong);
+  background: var(--vscode-accent);
+  border-color: var(--vscode-focus-ring);
+  outline: 0;
+}
+
+@media (max-width: 760px) {
+  .image-editor {
+    padding: 0;
+  }
+
+  .image-editor-panel {
+    border-radius: 0;
+  }
+
+  .image-editor-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .image-editor-toolbar {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--vscode-border-muted);
+  }
+
+  .image-editor-tool-group {
+    grid-auto-flow: column;
+    grid-template-columns: none;
+  }
+
+  .image-editor-control {
+    width: 120px;
+    flex: 0 0 auto;
+  }
+}

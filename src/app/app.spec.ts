@@ -61,6 +61,17 @@ function setWindowWidth(width: number): void {
   window.dispatchEvent(new Event('resize'));
 }
 
+function stubObjectUrls(): void {
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: (blob: Blob) => `blob:${blob.type || 'edited'}:${Date.now()}`,
+  });
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: () => undefined,
+  });
+}
+
 async function createLineup(fixture: ReturnType<typeof TestBed.createComponent<App>>): Promise<HTMLElement> {
   fixture.detectChanges();
   await fixture.whenStable();
@@ -220,6 +231,250 @@ describe('App', () => {
     expect(compiled.querySelectorAll('.map-point')).toHaveLength(1);
   });
 
+  it('should show playlist rail count and filter lineups by any selected playlist', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    app.playlists.set([
+      {
+        id: 'playlist-a',
+        title: 'A',
+        description: '',
+        thumbnailName: 'a.png',
+        thumbnailMimeType: 'image/png',
+        thumbnailBlob: new Blob(['a'], { type: 'image/png' }),
+        thumbnailUrl: 'blob:a',
+      },
+      {
+        id: 'playlist-b',
+        title: 'B',
+        description: '',
+        thumbnailName: 'b.png',
+        thumbnailMimeType: 'image/png',
+        thumbnailBlob: new Blob(['b'], { type: 'image/png' }),
+        thumbnailUrl: 'blob:b',
+      },
+    ]);
+    app.playlistMemberships.set({
+      'playlist-a': ['lineup-a'],
+      'playlist-b': ['lineup-b'],
+    });
+    app.addedPoints.set({
+      'dust2:main': [
+        { id: 'lineup-a', label: '1', mapId: 'dust2', levelId: 'main', x: 20, y: 20, kind: 'custom', grenadeCategoryId: 'smoke', teamSide: 'ct', trajectory: { vertices: [] } },
+        { id: 'lineup-b', label: '2', mapId: 'dust2', levelId: 'main', x: 40, y: 40, kind: 'custom', grenadeCategoryId: 'smoke', teamSide: 'ct', trajectory: { vertices: [] } },
+        { id: 'lineup-c', label: '3', mapId: 'dust2', levelId: 'main', x: 60, y: 60, kind: 'custom', grenadeCategoryId: 'smoke', teamSide: 'ct', trajectory: { vertices: [] } },
+      ],
+    });
+    app.selectedPlaylistIds.set(['playlist-a', 'playlist-b']);
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('.playlist-rail-button')?.textContent).toContain('2');
+    expect(compiled.querySelector('.playlist-rail-button')?.textContent).toContain('Playlists');
+    expect(compiled.querySelector('.playlist-rail-button')?.classList.contains('is-active')).toBe(true);
+    expect(compiled.querySelectorAll('.map-point')).toHaveLength(2);
+  });
+
+  it('should persist lineup playlist assignment when the dropdown closes', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    let savedLineupId = '';
+    let savedPlaylistIds: string[] = [];
+
+    app.playlists.set([{
+      id: 'playlist-a',
+      title: 'A',
+      description: '',
+      thumbnailName: 'a.png',
+      thumbnailMimeType: 'image/png',
+      thumbnailBlob: new Blob(['a'], { type: 'image/png' }),
+      thumbnailUrl: 'blob:a',
+    }]);
+    app.storage.setLineupPlaylists = async (lineupId: string, playlistIds: string[]) => {
+      savedLineupId = lineupId;
+      savedPlaylistIds = playlistIds;
+    };
+    app.storage.loadPlaylistMemberships = async () => ({ 'playlist-a': [savedLineupId] });
+
+    app.openPlaylistAssignment();
+    app.togglePlaylistAssignment('playlist-a', true);
+    await app.closePlaylistAssignment();
+    fixture.detectChanges();
+
+    expect(savedLineupId).toBe(app.selectedPointId());
+    expect(savedPlaylistIds).toEqual(['playlist-a']);
+    expect(app.playlistMemberships()).toEqual({ 'playlist-a': [savedLineupId] });
+  });
+
+  it('should save playlist member removals from the playlist panel', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const app = fixture.componentInstance as any;
+    let savedPlaylistId = '';
+    let savedLineupIds: string[] = ['lineup-a'];
+    const playlist = {
+      id: 'playlist-a',
+      title: 'A',
+      description: '',
+      thumbnailName: 'a.png',
+      thumbnailMimeType: 'image/png',
+      thumbnailBlob: new Blob(['a'], { type: 'image/png' }),
+      thumbnailUrl: 'blob:a',
+    };
+
+    app.playlists.set([playlist]);
+    app.playlistMemberships.set({ 'playlist-a': ['lineup-a'] });
+    app.storage.setPlaylistLineups = async (playlistId: string, lineupIds: string[]) => {
+      savedPlaylistId = playlistId;
+      savedLineupIds = lineupIds;
+    };
+    app.storage.loadPlaylistMemberships = async () => ({ 'playlist-a': savedLineupIds });
+
+    app.openPlaylistDetail(playlist);
+    app.toggleSelectedPlaylistLineup('lineup-a', false);
+    await app.saveSelectedPlaylistLineups();
+
+    expect(savedPlaylistId).toBe('playlist-a');
+    expect(savedLineupIds).toEqual([]);
+    expect(app.playlistMemberships()).toEqual({ 'playlist-a': [] });
+  });
+
+  it('should require confirmation and slug before deleting playlist content', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const app = fixture.componentInstance as any;
+    let deletedPlaylistId = '';
+    let deletedContent = false;
+    const playlist = {
+      id: 'playlist-a',
+      title: 'Shrouds lineups from 2016',
+      description: '',
+      thumbnailName: 'a.png',
+      thumbnailMimeType: 'image/png',
+      thumbnailBlob: new Blob(['a'], { type: 'image/png' }),
+      thumbnailUrl: 'blob:a',
+    };
+
+    app.playlists.set([playlist]);
+    app.playlistMemberships.set({ 'playlist-a': ['lineup-a'] });
+    app.addedPoints.set({
+      'dust2:main': [
+        { id: 'lineup-a', label: '1', mapId: 'dust2', levelId: 'main', x: 20, y: 20, kind: 'custom', grenadeCategoryId: 'smoke', teamSide: 'ct', trajectory: { vertices: [] } },
+      ],
+    });
+    app.openPlaylistDetail(playlist);
+    app.storage.deletePlaylist = async (playlistId: string, deleteContentToo: boolean) => {
+      deletedPlaylistId = playlistId;
+      deletedContent = deleteContentToo;
+    };
+    app.storage.loadPlaylistMemberships = async () => ({});
+
+    app.requestPlaylistDelete(true);
+    app.updatePlaylistDeleteAcknowledged(true);
+    app.updatePlaylistDeleteSlug('wrong');
+    expect(app.canConfirmPlaylistDelete()).toBe(false);
+
+    app.updatePlaylistDeleteSlug('shrouds-lineups-from-2016');
+    expect(app.canConfirmPlaylistDelete()).toBe(true);
+    await app.confirmPlaylistDelete();
+    expect(app.playlistDeleteConfirmation().secondStep).toBe(true);
+
+    await app.confirmPlaylistDelete();
+
+    expect(deletedPlaylistId).toBe('playlist-a');
+    expect(deletedContent).toBe(true);
+    expect(app.playlists()).toEqual([]);
+    expect(app.addedPoints()['dust2:main']).toEqual([]);
+  });
+
+  it('should edit a playlist thumbnail through the image editor', async () => {
+    stubObjectUrls();
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const app = fixture.componentInstance as any;
+
+    app.playlistDraft.set({
+      id: 'playlist-a',
+      title: 'A',
+      description: '',
+      thumbnailName: 'thumb.png',
+      thumbnailMimeType: 'image/png',
+      thumbnailBlob: new Blob(['original'], { type: 'image/png' }),
+      thumbnailUrl: 'blob:original',
+    });
+
+    app.openPlaylistThumbnailImageEditor();
+    expect(app.imageEditorMedia()?.name).toBe('thumb.png');
+
+    await app.saveEditedImage({
+      mode: 'replace',
+      name: 'thumb-edited.png',
+      mimeType: 'image/png',
+      blob: new Blob(['edited'], { type: 'image/png' }),
+    });
+
+    expect(app.imageEditorMedia()).toBeUndefined();
+    expect(app.playlistDraft().thumbnailName).toBe('thumb-edited.png');
+    expect(await app.playlistDraft().thumbnailBlob.text()).toBe('edited');
+  });
+
+  it('should generate a playlist thumbnail from the title when no image is selected', async () => {
+    stubObjectUrls();
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const app = fixture.componentInstance as any;
+    let savedPlaylist: any;
+
+    app.storage.savePlaylist = async (playlist: any) => {
+      savedPlaylist = playlist;
+    };
+    app.storage.loadPlaylists = async () => savedPlaylist ? [savedPlaylist] : [];
+    app.storage.loadPlaylistMemberships = async () => ({});
+
+    app.createPlaylist();
+    app.updatePlaylistDraftTitle('Shrouds lineups from 2016');
+    await app.savePlaylistDraft();
+
+    expect(savedPlaylist.thumbnailName).toBe('shrouds-lineups-from-2016-thumbnail.svg');
+    expect(savedPlaylist.thumbnailMimeType).toBe('image/svg+xml');
+    expect(await savedPlaylist.thumbnailBlob.text()).toContain('Shrouds lineups from 2016');
+    expect(savedPlaylist.thumbnailUrl).toContain('blob:image/svg+xml:');
+  });
+
+  it('should preview the generated playlist thumbnail when the title loses focus', async () => {
+    stubObjectUrls();
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    app.createPlaylist();
+    fixture.detectChanges();
+    const titleInput = compiled.querySelector('.playlist-panel input[type="text"]') as HTMLInputElement;
+    titleInput.value = 'Oil Pop Smoke Pack';
+    titleInput.dispatchEvent(new Event('input'));
+    titleInput.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    const draft = app.playlistDraft();
+    expect(draft.thumbnailAutoGenerated).toBe(true);
+    expect(draft.thumbnailName).toBe('oil-pop-smoke-pack-thumbnail.svg');
+    expect(await draft.thumbnailBlob.text()).toContain('Oil Pop Smoke Pack');
+    expect(compiled.querySelector('.playlist-thumbnail-upload img')).toBeTruthy();
+  });
+
   it('should hide map zoom buttons from the bottom rail', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
@@ -244,7 +499,7 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect(compiled.querySelector('.map-bottom-rail')?.classList.contains('is-compact')).toBe(true);
-    expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(2);
+    expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(3);
     expect(compiled.querySelector('.side-filter')).toBeFalsy();
     expect(compiled.querySelector('.grenade-filter')).toBeFalsy();
   });
@@ -261,7 +516,7 @@ describe('App', () => {
 
     expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(true);
     expect(compiled.querySelector('.map-bottom-rail')?.classList.contains('is-compact')).toBe(true);
-    expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(2);
+    expect(compiled.querySelectorAll('.rail-compact-button')).toHaveLength(3);
   });
 
   it('should keep the bottom rail compact after closing nav when the right panel overlaps the full rail', async () => {
@@ -324,7 +579,7 @@ describe('App', () => {
 
     (compiled.querySelector('.map-button') as HTMLButtonElement).click();
     fixture.detectChanges();
-    (compiled.querySelector('.rail-compact-button') as HTMLButtonElement).click();
+    (compiled.querySelectorAll('.rail-compact-button')[0] as HTMLButtonElement).click();
     fixture.detectChanges();
 
     expect(compiled.querySelector('.rail-popover.is-team')).toBeTruthy();
@@ -372,7 +627,7 @@ describe('App', () => {
 
     (compiled.querySelector('.map-button') as HTMLButtonElement).click();
     fixture.detectChanges();
-    (compiled.querySelector('.rail-compact-button') as HTMLButtonElement).click();
+    (compiled.querySelectorAll('.rail-compact-button')[0] as HTMLButtonElement).click();
     fixture.detectChanges();
 
     expect(compiled.querySelector('.rail-popover')).toBeTruthy();
@@ -1363,6 +1618,134 @@ describe('App', () => {
 
     expect(app.selectedPoint().media).toEqual([]);
     expect(app.selectedMediaId()).toBeNull();
+  });
+
+  it('should open the image editor only for image media in edit mode', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const image = {
+      id: 'image',
+      name: 'image.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['image'], { type: 'image/png' }),
+      url: 'blob:image',
+      role: 'detail' as const,
+    };
+    const video = {
+      id: 'video',
+      name: 'video.mp4',
+      type: 'video' as const,
+      mimeType: 'video/mp4',
+      blob: new Blob(['video'], { type: 'video/mp4' }),
+      url: 'blob:video',
+      role: 'detail' as const,
+    };
+
+    app.updateSelectedPoint({ media: [image, video] });
+    fixture.detectChanges();
+
+    (compiled.querySelector('.media-preview-button') as HTMLButtonElement).dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }),
+    );
+    fixture.detectChanges();
+    expect(Array.from(compiled.querySelectorAll('.media-context-menu button')).map((button) => button.textContent?.trim())).toContain('Edit');
+
+    (Array.from(compiled.querySelectorAll('.media-context-menu button')) as HTMLButtonElement[])
+      .find((button) => button.textContent?.trim() === 'Edit')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(app.imageEditorMedia()?.id).toBe('image');
+    expect(compiled.querySelector('app-image-editor')).toBeTruthy();
+
+    app.closeImageEditor();
+    fixture.detectChanges();
+    (compiled.querySelectorAll('.media-preview-button')[1] as HTMLButtonElement).dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }),
+    );
+    fixture.detectChanges();
+
+    expect(Array.from(compiled.querySelectorAll('.media-context-menu button')).map((button) => button.textContent?.trim())).not.toContain('Edit');
+  });
+
+  it('should save edited images as a new copy without changing the original', async () => {
+    stubObjectUrls();
+    const fixture = TestBed.createComponent(App);
+    await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const point = app.selectedPoint();
+    const media = {
+      id: 'one',
+      name: 'one.jpg',
+      type: 'image' as const,
+      mimeType: 'image/jpeg',
+      blob: new Blob(['one'], { type: 'image/jpeg' }),
+      url: 'blob:one',
+      role: 'start' as const,
+    };
+    const attached: Array<{ mediaId: string; role: string }> = [];
+
+    app.storage.addMediaAsset = async (asset: unknown) => asset;
+    app.storage.attachMediaToLineup = async (_lineupId: string, asset: { id: string }, role: string) => {
+      attached.push({ mediaId: asset.id, role });
+    };
+    app.updateSelectedPoint({ media: [media] });
+    app.imageEditorMediaId.set(media.id);
+
+    await app.saveEditedImage({
+      mode: 'copy',
+      blob: new Blob(['edited'], { type: 'image/png' }),
+      name: 'one-edited.png',
+      mimeType: 'image/png',
+    });
+
+    expect(app.selectedPoint().media).toHaveLength(2);
+    expect(app.selectedPoint().media[0]).toMatchObject({ id: 'one', role: 'start', mimeType: 'image/jpeg' });
+    expect(app.selectedPoint().media[1]).toMatchObject({ name: 'one-edited.png', role: 'detail', mimeType: 'image/png' });
+    expect(app.selectedMediaId()).toBe(app.selectedPoint().media[1].id);
+    expect(app.imageEditorMedia()).toBeUndefined();
+    expect(attached[0]).toMatchObject({ mediaId: app.selectedPoint().media[1].id, role: 'detail' });
+    expect(point.id).toBe(app.selectedPoint().id);
+  });
+
+  it('should replace edited images while preserving media id and role', async () => {
+    stubObjectUrls();
+    const fixture = TestBed.createComponent(App);
+    await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'one',
+      name: 'one.jpg',
+      type: 'image' as const,
+      mimeType: 'image/jpeg',
+      blob: new Blob(['one'], { type: 'image/jpeg' }),
+      url: 'blob:one',
+      role: 'result' as const,
+    };
+
+    app.storage.addMediaAsset = async (asset: unknown) => asset;
+    app.storage.attachMediaToLineup = async () => undefined;
+    app.updateSelectedPoint({ media: [media] });
+    app.imageEditorMediaId.set(media.id);
+
+    await app.saveEditedImage({
+      mode: 'replace',
+      blob: new Blob(['edited'], { type: 'image/png' }),
+      name: 'one-edited.png',
+      mimeType: 'image/png',
+    });
+
+    expect(app.selectedPoint().media).toHaveLength(1);
+    expect(app.selectedPoint().media[0]).toMatchObject({
+      id: 'one',
+      role: 'result',
+      name: 'one-edited.png',
+      mimeType: 'image/png',
+    });
+    expect(app.selectedMediaId()).toBe('one');
+    expect(app.imageEditorMedia()).toBeUndefined();
   });
 
   it('should open fullscreen preview from edit media on double click', async () => {
