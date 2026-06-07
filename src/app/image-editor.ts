@@ -31,7 +31,7 @@ export type ImageEditorSave = {
   mimeType: 'image/png';
 };
 
-type EditorTool = 'select' | 'pen' | 'eraser' | 'arrow' | 'rectangle' | 'circle' | 'line' | 'text';
+type EditorTool = 'select' | 'pan' | 'pen' | 'eraser' | 'arrow' | 'rectangle' | 'circle' | 'line' | 'text';
 type ResizeHandle = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 
 type Point = {
@@ -131,8 +131,10 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
   @Output() readonly save = new EventEmitter<ImageEditorSave>();
 
   @ViewChild('canvas') private readonly canvasRef?: ElementRef<HTMLCanvasElement>;
+  @ViewChild('stage') private readonly stageRef?: ElementRef<HTMLElement>;
 
   protected readonly colors = DEFAULT_COLORS;
+  protected readonly resizeHandleOptions: ResizeHandle[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
   protected tool: EditorTool = 'pen';
   protected color = DEFAULT_COLORS[0];
   protected hue = 0;
@@ -179,7 +181,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
 
   protected selectTool(tool: EditorTool): void {
     this.tool = tool;
-    if (tool !== 'select' && tool !== 'eraser') {
+    if (tool !== 'select' && tool !== 'pan' && tool !== 'eraser') {
       this.selectedAnnotationId = null;
     }
     this.saveChoicesOpen = false;
@@ -275,6 +277,53 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     return `translate(${this.pan.x}px, ${this.pan.y}px) scale(${this.zoom})`;
   }
 
+  protected canvasCursorClass(): string {
+    if (this.tool === 'pan') {
+      return 'is-pan-tool';
+    }
+
+    if (this.selectedAnnotationId) {
+      return 'has-selection';
+    }
+
+    return '';
+  }
+
+  protected selectedAnnotationType(): Annotation['type'] | undefined {
+    return this.selectedAnnotation()?.type;
+  }
+
+  protected selectedSelectionStyle(): Record<string, string> {
+    const selected = this.selectedAnnotation();
+    if (!selected) {
+      return {};
+    }
+
+    if (selected.type === 'line' || selected.type === 'arrow') {
+      return {};
+    }
+
+    return this.screenBoundsStyle(this.annotationBounds(selected));
+  }
+
+  protected selectedLineEndpointStyle(endpoint: 'start' | 'end'): Record<string, string> {
+    const selected = this.selectedAnnotation();
+    if (!selected || (selected.type !== 'line' && selected.type !== 'arrow')) {
+      return {};
+    }
+
+    return this.screenPointStyle(endpoint === 'start' ? selected.start : selected.end);
+  }
+
+  protected selectedHandleStyle(handle: ResizeHandle): Record<string, string> {
+    const selected = this.selectedAnnotation();
+    if (!selected || selected.type === 'line' || selected.type === 'arrow') {
+      return {};
+    }
+
+    return this.screenPointStyle(this.handlePoint(this.annotationBounds(selected), handle));
+  }
+
   protected zoomIn(): void {
     this.setZoom(this.zoom + 0.25);
   }
@@ -352,6 +401,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     }
 
     event.preventDefault();
+    this.colorPickerOpen = false;
     if (this.shouldPan(event)) {
       this.dragState = {
         mode: 'pan',
@@ -382,6 +432,25 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
+    const selected = this.selectedAnnotation();
+    if (selected && this.tool !== 'eraser' && this.tool !== 'pan') {
+      const selectedHit = this.annotationHitTest(selected, point, 12);
+      if (selectedHit) {
+        this.dragState = {
+          mode: 'move',
+          annotationId: selected.id,
+          start: point,
+          original: this.cloneAnnotation(selected),
+        };
+        this.rememberHistory();
+        return;
+      }
+
+      if (this.tool !== 'select') {
+        return;
+      }
+    }
+
     if (this.tool === 'eraser') {
       this.rememberHistory();
       const erasedIds = new Set<string>();
@@ -405,6 +474,10 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
         this.rememberHistory();
       }
       this.render();
+      return;
+    }
+
+    if (this.tool === 'pan') {
       return;
     }
 
@@ -567,6 +640,13 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
+    if ((event.key === 'Enter' || event.key === 'Escape') && this.selectedAnnotationId && !this.isTextEditingTarget(event.target)) {
+      event.preventDefault();
+      this.selectedAnnotationId = null;
+      this.render();
+      return;
+    }
+
     if (event.key === 'Escape') {
       event.preventDefault();
       this.cancel.emit();
@@ -660,32 +740,6 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       context.fillText(annotation.text, annotation.position.x, annotation.position.y);
     } else {
       this.drawShape(context, annotation);
-    }
-
-    if (selected && (annotation.type === 'line' || annotation.type === 'arrow')) {
-      context.setLineDash([]);
-      context.fillStyle = '#ffffff';
-      context.strokeStyle = '#111111';
-      for (const point of [annotation.start, annotation.end]) {
-        context.beginPath();
-        context.arc(point.x, point.y, HANDLE_SIZE / 1.6, 0, Math.PI * 2);
-        context.fill();
-        context.stroke();
-      }
-    } else if (selected) {
-      const box = this.annotationBounds(annotation);
-      context.strokeStyle = '#ffffff';
-      context.lineWidth = 2;
-      context.setLineDash([8, 6]);
-      context.strokeRect(box.x - 6, box.y - 6, box.width + 12, box.height + 12);
-      context.setLineDash([]);
-      context.fillStyle = '#ffffff';
-      context.strokeStyle = '#111111';
-      for (const handle of this.resizeHandles()) {
-        const point = this.handlePoint(box, handle);
-        context.fillRect(point.x - HANDLE_SIZE / 2, point.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
-        context.strokeRect(point.x - HANDLE_SIZE / 2, point.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
-      }
     }
 
     context.restore();
@@ -794,6 +848,40 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     };
   }
 
+  private screenPointStyle(point: Point): Record<string, string> {
+    const canvas = this.canvasRef?.nativeElement;
+    const stage = this.stageRef?.nativeElement;
+    if (!canvas || !stage) {
+      return {};
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    return {
+      left: `${canvasRect.left - stageRect.left + (point.x / Math.max(1, canvas.width)) * canvasRect.width}px`,
+      top: `${canvasRect.top - stageRect.top + (point.y / Math.max(1, canvas.height)) * canvasRect.height}px`,
+    };
+  }
+
+  private screenBoundsStyle(bounds: Bounds): Record<string, string> {
+    const canvas = this.canvasRef?.nativeElement;
+    const stage = this.stageRef?.nativeElement;
+    if (!canvas || !stage) {
+      return {};
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const scaleX = canvasRect.width / Math.max(1, canvas.width);
+    const scaleY = canvasRect.height / Math.max(1, canvas.height);
+    return {
+      left: `${canvasRect.left - stageRect.left + bounds.x * scaleX}px`,
+      top: `${canvasRect.top - stageRect.top + bounds.y * scaleY}px`,
+      width: `${bounds.width * scaleX}px`,
+      height: `${bounds.height * scaleY}px`,
+    };
+  }
+
   private eraseAt(point: Point, erasedIds: Set<string>): void {
     const annotation = this.findAnnotationAt(point);
     if (!annotation || erasedIds.has(annotation.id)) {
@@ -843,14 +931,18 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private findAnnotationAt(point: Point): Annotation | undefined {
     return [...this.annotations].reverse().find((annotation) => {
-      const box = this.annotationBounds(annotation);
-      return (
-        point.x >= box.x - 12 &&
-        point.x <= box.x + box.width + 12 &&
-        point.y >= box.y - 12 &&
-        point.y <= box.y + box.height + 12
-      );
+      return this.annotationHitTest(annotation, point, 12);
     });
+  }
+
+  private annotationHitTest(annotation: Annotation, point: Point, padding: number): boolean {
+    const box = this.annotationBounds(annotation);
+    return (
+      point.x >= box.x - padding &&
+      point.x <= box.x + box.width + padding &&
+      point.y >= box.y - padding &&
+      point.y <= box.y + box.height + padding
+    );
   }
 
   private annotationBounds(annotation: Annotation): { x: number; y: number; width: number; height: number } {
@@ -1090,7 +1182,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private resizeHandles(): ResizeHandle[] {
-    return ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+    return this.resizeHandleOptions;
   }
 
   private setZoom(value: number): void {
@@ -1102,7 +1194,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private shouldPan(event: PointerEvent): boolean {
-    return this.zoom > 1 && (this.spacePressed || event.button === 1);
+    return this.zoom > 1 && (this.tool === 'pan' || this.spacePressed || event.button === 1);
   }
 
   private isTextEditingTarget(target: EventTarget | null): boolean {

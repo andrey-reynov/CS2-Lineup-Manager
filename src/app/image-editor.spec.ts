@@ -166,6 +166,46 @@ describe('ImageEditorComponent', () => {
     expect(editor.annotations[0].end).toEqual({ x: 160, y: 120 });
   });
 
+  it('should move a freshly selected shape before drawing another one', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as {
+      annotations: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>;
+      selectedAnnotationId: string | null;
+    };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Rectangle"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 11, button: 0, clientX: 30, clientY: 30 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 11, clientX: 120, clientY: 90 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 11, clientX: 120, clientY: 90 }));
+
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 12, button: 0, clientX: 60, clientY: 50 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 12, clientX: 80, clientY: 65 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 12, clientX: 80, clientY: 65 }));
+    fixture.detectChanges();
+
+    expect(editor.annotations).toHaveLength(1);
+    expect(editor.annotations[0].start).toEqual({ x: 50, y: 45 });
+    expect(editor.annotations[0].end).toEqual({ x: 140, y: 105 });
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(editor.selectedAnnotationId).toBeNull();
+  });
+
+  it('should pan the image only from the pan tool with left drag', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { zoom: number; pan: { x: number; y: number } };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    editor.zoom = 2;
+    (fixture.nativeElement.querySelector('[aria-label="Move image"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 13, button: 0, clientX: 40, clientY: 40 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 13, clientX: 70, clientY: 55 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 13, clientX: 70, clientY: 55 }));
+
+    expect(editor.pan).toEqual({ x: 30, y: 15 });
+  });
+
   it('should erase annotations and restore them with Ctrl+Z', async () => {
     const fixture = await createEditor();
     const editor = fixture.componentInstance as unknown as { annotations: unknown[]; tool: string };
@@ -277,7 +317,7 @@ describe('ImageEditorComponent', () => {
     const saves: ImageEditorSave[] = [];
     fixture.componentInstance.save.subscribe((result) => saves.push(result));
 
-    (fixture.nativeElement.querySelector('.image-editor-footer .is-accent') as HTMLButtonElement).click();
+    (fixture.nativeElement.querySelector('.image-editor-header .is-accent') as HTMLButtonElement).click();
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.image-editor-save-menu button') as HTMLButtonElement).click();
     await fixture.whenStable();

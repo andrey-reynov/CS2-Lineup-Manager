@@ -5,22 +5,36 @@
         <strong>{{ media.name }}</strong>
         <span>{{ isLoading ? 'Loading image' : 'Annotating image' }}</span>
       </div>
-      <button type="button" class="image-editor-icon-button" aria-label="Close editor" (click)="cancel.emit()">
-        <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
-      </button>
+      <div class="image-editor-header-actions">
+        <div class="image-editor-save-area">
+          @if (saveChoicesOpen) {
+            <div class="image-editor-save-menu">
+              <button type="button" (click)="saveImage('copy')">Save copy</button>
+              <button type="button" (click)="saveImage('replace')">Replace original</button>
+            </div>
+          }
+          <button type="button" class="ui-button is-accent" [disabled]="isLoading" (click)="requestSave()">Save</button>
+        </div>
+        <button type="button" class="image-editor-icon-button" aria-label="Close editor" (click)="cancel.emit()">
+          <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
+        </button>
+      </div>
     </header>
 
     <div class="image-editor-body">
       <aside class="image-editor-toolbar" aria-label="Editor tools">
-        <div class="image-editor-tool-group">
+        <div class="image-editor-tool-section" aria-label="Selection tools">
           <button type="button" [class.is-active]="tool === 'select'" title="Select" aria-label="Select" (click)="selectTool('select')">
             <span class="ui-icon" style="--icon-url: url('/icons/check_outline.svg')" aria-hidden="true"></span>
           </button>
+          <button type="button" [class.is-active]="tool === 'pan'" title="Move image" aria-label="Move image" (click)="selectTool('pan')">
+            <span class="ui-icon" style="--icon-url: url('/icons/fullscreen_outline.svg')" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="image-editor-tool-section" aria-label="Drawing tools">
           <button type="button" [class.is-active]="tool === 'pen'" title="Pen" aria-label="Pen" (click)="selectTool('pen')">
             <span class="ui-icon" style="--icon-url: url('/icons/paint_fill.svg')" aria-hidden="true"></span>
-          </button>
-          <button type="button" [class.is-active]="tool === 'eraser'" title="Eraser" aria-label="Eraser" (click)="selectTool('eraser')">
-            <span class="ui-icon" style="--icon-url: url('/icons/delete_outline.svg')" aria-hidden="true"></span>
           </button>
           <button type="button" [class.is-active]="tool === 'arrow'" title="Arrow" aria-label="Arrow" (click)="selectTool('arrow')">
             <span class="ui-icon" style="--icon-url: url('/icons/arrow_outline.svg')" aria-hidden="true"></span>
@@ -109,12 +123,9 @@
           </label>
         }
 
-        <div class="image-editor-tool-group">
-          <button type="button" title="Undo" aria-label="Undo" [disabled]="!canUndo()" (click)="undo()">
-            <span class="ui-icon" style="--icon-url: url('/icons/back_outline.svg')" aria-hidden="true"></span>
-          </button>
-          <button type="button" title="Redo" aria-label="Redo" [disabled]="!canRedo()" (click)="redo()">
-            <span class="ui-icon" style="--icon-url: url('/icons/forward_outline.svg')" aria-hidden="true"></span>
+        <div class="image-editor-tool-section" aria-label="Edit tools">
+          <button type="button" [class.is-active]="tool === 'eraser'" title="Eraser" aria-label="Eraser" (click)="selectTool('eraser')">
+            <span class="ui-icon" style="--icon-url: url('/icons/delete_outline.svg')" aria-hidden="true"></span>
           </button>
           <button type="button" title="Delete selected" aria-label="Delete selected" [disabled]="!selectedAnnotationId" (click)="deleteSelected()">
             <span class="ui-icon" style="--icon-url: url('/icons/delete_outline.svg')" aria-hidden="true"></span>
@@ -124,25 +135,22 @@
           </button>
         </div>
 
-        <div class="image-editor-tool-group">
-          <button type="button" title="Zoom out" aria-label="Zoom out" (click)="zoomOut()">
-            <span aria-hidden="true">-</span>
+        <div class="image-editor-tool-section" aria-label="History">
+          <button type="button" title="Undo" aria-label="Undo" [disabled]="!canUndo()" (click)="undo()">
+            <span class="ui-icon" style="--icon-url: url('/icons/back_outline.svg')" aria-hidden="true"></span>
           </button>
-          <button type="button" title="Zoom in" aria-label="Zoom in" (click)="zoomIn()">
-            <span aria-hidden="true">+</span>
-          </button>
-          <button type="button" title="Reset zoom" aria-label="Reset zoom" (click)="resetZoom()">
-            <span aria-hidden="true">{{ zoom | number: '1.0-1' }}x</span>
+          <button type="button" title="Redo" aria-label="Redo" [disabled]="!canRedo()" (click)="redo()">
+            <span class="ui-icon" style="--icon-url: url('/icons/forward_outline.svg')" aria-hidden="true"></span>
           </button>
         </div>
       </aside>
 
-      <div class="image-editor-stage">
+      <div #stage class="image-editor-stage">
         <canvas
           #canvas
           class="image-editor-canvas"
           [class.is-loading]="isLoading"
-          [class.is-zoomed]="zoom > 1"
+          [ngClass]="canvasCursorClass()"
           [style.transform]="canvasTransform()"
           (pointerdown)="onCanvasPointerDown($event)"
           (pointermove)="onCanvasPointerMove($event)"
@@ -150,6 +158,19 @@
           (pointercancel)="onCanvasPointerUp($event)"
           (wheel)="onEditorWheel($event)"
         ></canvas>
+        @if (selectedAnnotationId && selectedAnnotationType(); as selectedType) {
+          <div class="image-editor-selection-layer" aria-hidden="true">
+            @if (selectedType === 'line' || selectedType === 'arrow') {
+              <span class="image-editor-endpoint" [ngStyle]="selectedLineEndpointStyle('start')"></span>
+              <span class="image-editor-endpoint" [ngStyle]="selectedLineEndpointStyle('end')"></span>
+            } @else {
+              <span class="image-editor-selection-outline" [ngStyle]="selectedSelectionStyle()"></span>
+              @for (handle of resizeHandleOptions; track handle) {
+                <span class="image-editor-handle" [ngClass]="'is-' + handle" [ngStyle]="selectedHandleStyle(handle)"></span>
+              }
+            }
+          </div>
+        }
         @if (errorMessage) {
           <p class="image-editor-error">{{ errorMessage }}</p>
         }
@@ -157,15 +178,16 @@
     </div>
 
     <footer class="image-editor-footer">
-      <button type="button" class="ui-button" (click)="cancel.emit()">Cancel</button>
-      <div class="image-editor-save-area">
-        @if (saveChoicesOpen) {
-          <div class="image-editor-save-menu">
-            <button type="button" (click)="saveImage('copy')">Save copy</button>
-            <button type="button" (click)="saveImage('replace')">Replace original</button>
-          </div>
-        }
-        <button type="button" class="ui-button is-accent" [disabled]="isLoading" (click)="requestSave()">Save</button>
+      <div class="image-editor-zoom-controls" aria-label="Zoom controls">
+        <button type="button" title="Zoom out" aria-label="Zoom out" (click)="zoomOut()">
+          <span aria-hidden="true">-</span>
+        </button>
+        <button type="button" title="Reset zoom" aria-label="Reset zoom" (click)="resetZoom()">
+          <span aria-hidden="true">{{ zoom | number: '1.0-1' }}x</span>
+        </button>
+        <button type="button" title="Zoom in" aria-label="Zoom in" (click)="zoomIn()">
+          <span aria-hidden="true">+</span>
+        </button>
       </div>
     </footer>
   </section>
