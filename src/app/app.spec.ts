@@ -585,7 +585,7 @@ describe('App', () => {
     await fixture.whenStable();
 
     expect(compiled.querySelector('.point-details input')).toBeTruthy();
-    expect(compiled.querySelector('.point-details-header')?.textContent).toContain('Untitled lineup');
+    expect(compiled.querySelector('.point-details-header')?.textContent).toContain('Editing...');
     expect(compiled.querySelector('.point-details-header')?.textContent).not.toContain('Smoke 1');
 
     (compiled.querySelector('.save-button') as HTMLButtonElement).click();

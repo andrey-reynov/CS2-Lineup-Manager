@@ -88,6 +88,32 @@ fn save_zip_to_path(path: String, bytes: Vec<u8>) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn write_zip_chunk(path: String, bytes: Vec<u8>, append: bool) -> Result<String, String> {
+  let zip_path = PathBuf::from(path);
+  if let Some(parent) = zip_path.parent() {
+    fs::create_dir_all(parent)
+      .map_err(|error| format!("Failed to create {}: {error}", parent.to_string_lossy()))?;
+  }
+
+  let mut options = fs::OpenOptions::new();
+  options.create(true).write(true);
+  if append {
+    options.append(true);
+  } else {
+    options.truncate(true);
+  }
+
+  use std::io::Write;
+  let mut file = options
+    .open(&zip_path)
+    .map_err(|error| format!("Failed to open {}: {error}", zip_path.to_string_lossy()))?;
+  file
+    .write_all(&bytes)
+    .map_err(|error| format!("Failed to write {}: {error}", zip_path.to_string_lossy()))?;
+  Ok(path_to_string(zip_path))
+}
+
+#[tauri::command]
 fn read_zip_file(path: String) -> Result<Vec<u8>, String> {
   let zip_path = PathBuf::from(path);
   fs::read(&zip_path).map_err(|error| format!("Failed to read {}: {error}", zip_path.to_string_lossy()))
@@ -104,6 +130,7 @@ pub fn run() {
       read_content_file,
       save_backup_zip,
       save_zip_to_path,
+      write_zip_chunk,
       read_zip_file
     ])
     .setup(|app| {

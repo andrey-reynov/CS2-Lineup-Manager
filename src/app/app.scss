@@ -29,7 +29,7 @@
   --grenade-smoke: #8d9498;
   --grenade-flash: #d7ba7d;
   --grenade-molotov: #ce9178;
-  --grenade-he: #f14c4c;
+  --grenade-he: #5f8f68;
   --left-panel-width: 330px;
   --right-panel-width: 330px;
 
@@ -906,6 +906,12 @@ h2 {
 .settings-error {
   margin: 0;
   color: var(--vscode-error);
+  font-size: 0.86rem;
+}
+
+.settings-status {
+  margin: 0;
+  color: var(--vscode-text-muted);
   font-size: 0.86rem;
 }
 

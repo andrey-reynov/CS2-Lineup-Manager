@@ -87,6 +87,12 @@ type GrenadeFilterOption = {
   isLocalIcon?: boolean;
 };
 
+type MapLineupStats = {
+  total: number;
+  teams: Record<TeamSide, number>;
+  grenades: Record<GrenadeCategoryId, number>;
+};
+
 type DragState = {
   pointerId: number;
   startClientX: number;
@@ -571,6 +577,7 @@ export class App {
   protected readonly mediaPoolOpen = signal(false);
   protected readonly mediaPoolAssets = signal<PointMedia[]>([]);
   protected readonly importError = signal<string | null>(null);
+  protected readonly exportStatus = signal<string | null>(null);
   protected readonly storageMigrationStatus = signal<StorageMigrationStatus | null>(null);
   protected readonly draggedMediaId = signal<string | null>(null);
   protected readonly selectedMediaId = signal<string | null>(null);
@@ -643,6 +650,9 @@ export class App {
   private previewPanState: PreviewPanState | null = null;
   private panelResizeState: PanelResizeState | null = null;
   private suppressNextBoardClick = false;
+  private guidePreviewFocusFrame: number | null = null;
+  private guidePreviewFocusTarget: HTMLElement | null = null;
+  private guidePreviewFocus = { x: -1, y: -1 };
 
   protected readonly selectedMap = computed(() => {
     return this.maps().find((map) => map.id === this.selectedMapId());
@@ -681,7 +691,12 @@ export class App {
     const groups = new Map<string, MapPoint[]>();
     for (const point of this.currentPoints()) {
       const groupId = this.resultSpotGroupKey(point);
-      groups.set(groupId, [...(groups.get(groupId) ?? []), point]);
+      const variants = groups.get(groupId);
+      if (variants) {
+        variants.push(point);
+      } else {
+        groups.set(groupId, [point]);
+      }
     }
 
     return Array.from(groups.entries()).map(([id, variants]) => {
@@ -708,9 +723,22 @@ export class App {
     return Object.values(this.addedPoints()).flat();
   });
 
+  protected readonly mapLineupStats = computed<Record<string, MapLineupStats>>(() => {
+    const stats: Record<string, MapLineupStats> = {};
+    for (const point of this.allSavedPoints()) {
+      const mapStats = stats[point.mapId] ??= this.emptyMapLineupStats();
+      mapStats.total += 1;
+      mapStats.teams[point.teamSide] += 1;
+      if (point.grenadeCategoryId) {
+        mapStats.grenades[point.grenadeCategoryId] += 1;
+      }
+    }
+
+    return stats;
+  });
+
   protected readonly previewGallery = computed(() => {
-    const point = this.selectedPoint();
-    return point ? this.orderedMedia(point) : [];
+    return this.selectedPointMedia();
   });
 
   protected readonly previewMedia = computed(() => {
@@ -755,6 +783,53 @@ export class App {
 
   protected readonly selectedResultSpotHasMultipleVariants = computed(() => this.selectedResultSpotVariants().length > 1);
 
+  protected readonly selectedPointMedia = computed(() => {
+    const point = this.selectedPoint();
+    return point ? this.sortRoleMedia(point.media ?? []) : [];
+  });
+
+  protected readonly selectedPointStartMedia = computed(() => (
+    this.selectedPointMedia().find((media) => media.role === 'start')
+  ));
+
+  protected readonly selectedPointResultMedia = computed(() => (
+    this.selectedPointMedia().find((media) => media.role === 'result')
+  ));
+
+  protected readonly selectedPointDescription = computed(() => (
+    this.selectedPoint()?.description?.trim() ?? ''
+  ));
+
+  protected readonly selectedPointMovementText = computed(() => {
+    const point = this.selectedPoint();
+    if (!point) {
+      return '';
+    }
+
+    return this.selectedRequirements(point, this.movementRequirements)
+      .map((requirement) => requirement.label)
+      .join(' + ');
+  });
+
+  protected readonly selectedPointMouseRequirement = computed(() => {
+    const point = this.selectedPoint();
+    return point ? this.selectedRequirements(point, this.mouseRequirements)[0] : undefined;
+  });
+
+  protected readonly selectedTeamFilterOption = computed(() => (
+    this.teamFilterOptions.find((option) => option.id === this.selectedTeamSide())
+      ?? this.teamFilterOptions[0]
+  ));
+
+  protected readonly selectedGrenadeFilterOption = computed(() => {
+    if (this.showAllLineups()) {
+      return this.grenadeFilterOptions[0];
+    }
+
+    return this.grenadeFilterOptions.find((option) => option.id === this.selectedGrenadeCategoryId())
+      ?? this.grenadeFilterOptions[0];
+  });
+
   protected readonly mediaPoolItems = computed(() => {
     const assets = new Map<string, PointMedia>();
     for (const media of this.mediaPoolAssets()) {
@@ -791,18 +866,71 @@ export class App {
     ];
   });
 
+  protected readonly trajectoryRenderPointList = computed(() => {
+    const points = this.selectedTrajectoryPoints();
+    if (points.length < 2) {
+      return points;
+    }
+
+    const [result, next] = points;
+    const dx = next.x - result.x;
+    const dy = next.y - result.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance <= 0.01) {
+      return points;
+    }
+
+    const offset = Math.min(2.4, distance * 0.45);
+    return [
+      {
+        x: result.x + (dx / distance) * offset,
+        y: result.y + (dy / distance) * offset,
+      },
+      ...points.slice(1),
+    ];
+  });
+
+  protected readonly trajectorySvgPointList = computed(() => (
+    this.trajectoryRenderPointList()
+      .map((point) => `${point.x},${point.y}`)
+      .join(' ')
+  ));
+
+  protected readonly trajectorySegmentMidpointList = computed(() => {
+    const points = this.selectedTrajectoryPoints().filter((point) => point.role !== 'draft');
+    return points.slice(0, -1).map((point, index) => {
+      const nextPoint = points[index + 1];
+      return {
+        id: `${point.id}:${nextPoint.id}:mid`,
+        index,
+        x: (point.x + nextPoint.x) / 2,
+        y: (point.y + nextPoint.y) / 2,
+      };
+    });
+  });
+
   protected mapLineupCount(map: TacticalMap): number {
-    return this.allSavedPoints().filter((point) => point.mapId === map.id).length;
+    return this.lineupStatsForMap(map).total;
   }
 
   protected mapTeamLineupCount(map: TacticalMap, teamSide: TeamSide): number {
-    return this.allSavedPoints().filter((point) => point.mapId === map.id && point.teamSide === teamSide).length;
+    return this.lineupStatsForMap(map).teams[teamSide];
   }
 
   protected mapGrenadeLineupCount(map: TacticalMap, grenadeCategoryId: GrenadeCategoryId): number {
-    return this.allSavedPoints().filter((point) => (
-      point.mapId === map.id && point.grenadeCategoryId === grenadeCategoryId
-    )).length;
+    return this.lineupStatsForMap(map).grenades[grenadeCategoryId];
+  }
+
+  private lineupStatsForMap(map: TacticalMap): MapLineupStats {
+    return this.mapLineupStats()[map.id] ?? this.emptyMapLineupStats();
+  }
+
+  private emptyMapLineupStats(): MapLineupStats {
+    return {
+      total: 0,
+      teams: { ct: 0, t: 0 },
+      grenades: { smoke: 0, flash: 0, molotov: 0, he: 0 },
+    };
   }
 
   constructor() {
@@ -982,17 +1110,11 @@ export class App {
   }
 
   protected selectedTeamOption(): TeamFilterOption {
-    return this.teamFilterOptions.find((option) => option.id === this.selectedTeamSide())
-      ?? this.teamFilterOptions[0];
+    return this.selectedTeamFilterOption();
   }
 
   protected selectedGrenadeOption(): GrenadeFilterOption {
-    if (this.showAllLineups()) {
-      return this.grenadeFilterOptions[0];
-    }
-
-    return this.grenadeFilterOptions.find((option) => option.id === this.selectedGrenadeCategoryId())
-      ?? this.grenadeFilterOptions[0];
+    return this.selectedGrenadeFilterOption();
   }
 
   protected isGrenadeFilterOptionActive(option: GrenadeFilterOption): boolean {
@@ -1371,8 +1493,25 @@ export class App {
 
     const x = this.clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
     const y = this.clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100);
-    slot.style.setProperty('--preview-focus-x', `${x}%`);
-    slot.style.setProperty('--preview-focus-y', `${y}%`);
+    if (
+      this.guidePreviewFocusTarget === slot &&
+      Math.abs(x - this.guidePreviewFocus.x) < 0.5 &&
+      Math.abs(y - this.guidePreviewFocus.y) < 0.5
+    ) {
+      return;
+    }
+
+    this.guidePreviewFocusTarget = slot;
+    this.guidePreviewFocus = { x, y };
+    if (this.guidePreviewFocusFrame !== null) {
+      return;
+    }
+
+    this.guidePreviewFocusFrame = requestAnimationFrame(() => {
+      this.guidePreviewFocusFrame = null;
+      this.guidePreviewFocusTarget?.style.setProperty('--preview-focus-x', `${this.guidePreviewFocus.x}%`);
+      this.guidePreviewFocusTarget?.style.setProperty('--preview-focus-y', `${this.guidePreviewFocus.y}%`);
+    });
   }
 
   protected toggleRequirement(requirementId: string, checked: boolean): void {
@@ -2113,54 +2252,37 @@ export class App {
   }
 
   protected trajectorySvgPoints(): string {
-    return this.trajectoryRenderPoints()
-      .map((point) => `${point.x},${point.y}`)
-      .join(' ');
+    return this.trajectorySvgPointList();
   }
 
   protected trajectoryRenderPoints(): Array<{ x: number; y: number }> {
-    const points = this.selectedTrajectoryPoints();
-    if (points.length < 2) {
-      return points;
-    }
-
-    const [result, next] = points;
-    const dx = next.x - result.x;
-    const dy = next.y - result.y;
-    const distance = Math.hypot(dx, dy);
-    if (distance <= 0.01) {
-      return points;
-    }
-
-    const offset = Math.min(2.4, distance * 0.45);
-    return [
-      {
-        x: result.x + (dx / distance) * offset,
-        y: result.y + (dy / distance) * offset,
-      },
-      ...points.slice(1),
-    ];
+    return this.trajectoryRenderPointList();
   }
 
   protected trajectorySegmentMidpoints(): Array<{ id: string; index: number; x: number; y: number }> {
-    const points = this.selectedTrajectoryPoints().filter((point) => point.role !== 'draft');
-    return points.slice(0, -1).map((point, index) => {
-      const nextPoint = points[index + 1];
-      return {
-        id: `${point.id}:${nextPoint.id}:mid`,
-        index,
-        x: (point.x + nextPoint.x) / 2,
-        y: (point.y + nextPoint.y) / 2,
-      };
-    });
+    return this.trajectorySegmentMidpointList();
   }
 
   protected async exportZip(): Promise<void> {
-    const blob = await this.storage.exportZip(
-      this.allSavedPoints().map((point) => this.toStoredPoint(point)),
-      this.customStoredMaps(),
-    );
-    await this.saveZip(blob, `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`);
+    if (this.exportStatus()) {
+      return;
+    }
+
+    try {
+      this.importError.set(null);
+      this.exportStatus.set('Preparing export...');
+      await this.nextAnimationFrame();
+      const blob = await this.storage.exportZip(
+        this.allSavedPoints().map((point) => this.toStoredPoint(point)),
+        this.customStoredMaps(),
+      );
+      this.exportStatus.set('Choose where to save the ZIP...');
+      await this.saveZip(blob, `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`);
+    } catch (error) {
+      this.importError.set(error instanceof Error ? error.message : 'Export failed');
+    } finally {
+      this.exportStatus.set(null);
+    }
   }
 
   protected async migrateLegacyDataFromSettings(): Promise<void> {
@@ -2246,10 +2368,7 @@ export class App {
       }
 
       const zipPath = selectedPath.toLowerCase().endsWith('.zip') ? selectedPath : `${selectedPath}.zip`;
-      const path = await core.invoke<string>('save_zip_to_path', {
-        path: zipPath,
-        bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
-      });
+      const path = await this.writeZipBlobWithTauri(core.invoke, zipPath, blob);
       if (options.alert !== false) {
         globalThis.alert?.(`ZIP exported:\n${path}`);
       }
@@ -2259,6 +2378,48 @@ export class App {
       this.importError.set(error instanceof Error ? error.message : 'Backup save failed');
       throw error;
     }
+  }
+
+  private async writeZipBlobWithTauri(
+    invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>,
+    path: string,
+    blob: Blob,
+  ): Promise<string> {
+    const reader = blob.stream().getReader();
+    let written = 0;
+    let append = false;
+    let savedPath = path;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      savedPath = await invoke<string>('write_zip_chunk', {
+        path,
+        bytes: Array.from(chunk),
+        append,
+      });
+      append = true;
+      written += chunk.byteLength;
+      this.exportStatus.set(`Saving export... ${this.percentText(written, blob.size)}`);
+      await this.nextAnimationFrame();
+    }
+
+    return savedPath;
+  }
+
+  private percentText(done: number, total: number): string {
+    if (total <= 0) {
+      return '';
+    }
+    return `${Math.min(100, Math.round((done / total) * 100))}%`;
+  }
+
+  private nextAnimationFrame(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
   }
 
   protected async importZip(event?: Event): Promise<void> {

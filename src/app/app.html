@@ -205,9 +205,9 @@
                 <span class="ui-icon" style="--icon-url: url('/icons/upload_outline.svg')" aria-hidden="true"></span>
                 Import ZIP
               </button>
-              <button type="button" class="settings-action ui-button" (click)="exportZip()">
+              <button type="button" class="settings-action ui-button" [disabled]="exportStatus()" (click)="exportZip()">
                 <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
-                Export ZIP
+                {{ exportStatus() || 'Export ZIP' }}
               </button>
               @if (showLegacyMigration()) {
                 <button type="button" class="settings-action ui-button" (click)="migrateLegacyDataFromSettings()">
@@ -219,6 +219,9 @@
           </section>
           @if (importError()) {
             <p class="settings-error">{{ importError() }}</p>
+          }
+          @if (exportStatus()) {
+            <p class="settings-status">{{ exportStatus() }}</p>
           }
         </section>
       } @else if (selectedMap(); as map) {
@@ -634,14 +637,14 @@
             <button
               class="guide-slot"
               type="button"
-              [class.is-empty]="!guideSlotMedia(point, 'start')"
+              [class.is-empty]="!selectedPointStartMedia()"
               (dragover)="onGuideRoleDragOver($event)"
               (drop)="onGuideRoleDrop('start', $event)"
-              (click)="guideSlotMedia(point, 'start') && openMediaPreview(guideSlotMedia(point, 'start')!)"
+              (click)="selectedPointStartMedia() && openMediaPreview(selectedPointStartMedia()!)"
               (mousemove)="updateGuidePreviewFocus($event)"
             >
               <small>Start</small>
-              @if (guideSlotMedia(point, 'start'); as media) {
+              @if (selectedPointStartMedia(); as media) {
                 @if (media.type === 'image') {
                   <img [src]="media.url" [alt]="media.name" />
                 } @else {
@@ -651,8 +654,8 @@
                 <span>No start screenshot</span>
               }
               <div class="guide-throw-overlay">
-                <em>{{ guideMovementText(point) || 'None' }}</em>
-                @if (guideMouseRequirement(point); as mouseRequirement) {
+                <em>{{ selectedPointMovementText() || 'None' }}</em>
+                @if (selectedPointMouseRequirement(); as mouseRequirement) {
                   <strong>
                     <span
                       class="mouse-icon"
@@ -673,14 +676,14 @@
             <button
               class="guide-slot"
               type="button"
-              [class.is-empty]="!guideSlotMedia(point, 'result')"
+              [class.is-empty]="!selectedPointResultMedia()"
               (dragover)="onGuideRoleDragOver($event)"
               (drop)="onGuideRoleDrop('result', $event)"
-              (click)="guideSlotMedia(point, 'result') && openMediaPreview(guideSlotMedia(point, 'result')!)"
+              (click)="selectedPointResultMedia() && openMediaPreview(selectedPointResultMedia()!)"
               (mousemove)="updateGuidePreviewFocus($event)"
             >
               <small>Result</small>
-              @if (guideSlotMedia(point, 'result'); as media) {
+              @if (selectedPointResultMedia(); as media) {
                 @if (media.type === 'image') {
                   <img [src]="media.url" [alt]="media.name" />
                 } @else {
@@ -691,8 +694,8 @@
               }
             </button>
 
-            @if (displayDescription(point)) {
-              <p class="lineup-description">{{ displayDescription(point) }}</p>
+            @if (selectedPointDescription()) {
+              <p class="lineup-description">{{ selectedPointDescription() }}</p>
             }
 
             <div class="lineup-detail-actions">
@@ -714,7 +717,7 @@
               (pointerdown)="startPanelResize('right', $event)"
             ></div>
             <div class="point-details-header">
-              <span>{{ displayTitle(point) }}</span>
+              <span>Editing...</span>
               <button type="button" aria-label="Close" (click)="closePointEditor()">
                 <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
               </button>
@@ -746,14 +749,14 @@
                 <button
                   class="guide-slot is-compact"
                   type="button"
-                  [class.is-empty]="!guideSlotMedia(point, 'start')"
+                  [class.is-empty]="!selectedPointStartMedia()"
                   (dragover)="onGuideRoleDragOver($event)"
                   (drop)="onGuideRoleDrop('start', $event)"
                   (pointerup)="onGuideRolePointerUp('start', $event)"
                   (click)="onGuideRoleSlotClick('start', $event)"
                 >
                   <small>Start</small>
-                  @if (guideSlotMedia(point, 'start'); as media) {
+                  @if (selectedPointStartMedia(); as media) {
                     <img [src]="media.url" [alt]="media.name" />
                   } @else {
                     <span>Drop image</span>
@@ -762,14 +765,14 @@
                 <button
                   class="guide-slot is-compact"
                   type="button"
-                  [class.is-empty]="!guideSlotMedia(point, 'result')"
+                  [class.is-empty]="!selectedPointResultMedia()"
                   (dragover)="onGuideRoleDragOver($event)"
                   (drop)="onGuideRoleDrop('result', $event)"
                   (pointerup)="onGuideRolePointerUp('result', $event)"
                   (click)="onGuideRoleSlotClick('result', $event)"
                 >
                   <small>Result</small>
-                  @if (guideSlotMedia(point, 'result'); as media) {
+                  @if (selectedPointResultMedia(); as media) {
                     <img [src]="media.url" [alt]="media.name" />
                   } @else {
                     <span>Drop image</span>
@@ -777,7 +780,7 @@
                 </button>
               </div>
               <div class="media-grid">
-                @for (media of orderedMedia(point); track media.id) {
+                @for (media of selectedPointMedia(); track media.id) {
                   <div
                     class="media-tile"
                     [class.is-selected]="isMediaSelected(media.id)"
