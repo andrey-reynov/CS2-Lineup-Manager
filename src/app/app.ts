@@ -640,6 +640,7 @@ export class App {
   protected readonly imageEditorMediaId = signal<string | null>(null);
   protected readonly imageEditorPlaylistThumbnailOpen = signal(false);
   protected readonly performanceEntries = signal<PerformanceLogEntry[]>([]);
+  protected readonly lineupsHiddenOverride = signal<boolean | null>(null);
   protected readonly trajectoryEditMode = signal<TrajectoryEditMode | null>(null);
   protected readonly selectedTrajectoryVertexId = signal<string | null>(null);
   protected readonly draftTrajectoryVertex = signal<TrajectoryVertex | null>(null);
@@ -777,6 +778,40 @@ export class App {
 
   protected readonly currentResultPoints = computed(() => (
     this.currentResultSpotGroups().map((group) => group.representative)
+  ));
+
+  protected readonly autoHideLineups = computed(() => (
+    this.selectedPointMode() === 'edit' &&
+    this.trajectoryEditMode() === 'create' &&
+    Boolean(this.selectedPoint())
+  ));
+
+  protected readonly lineupsHidden = computed(() => (
+    this.lineupsHiddenOverride() ?? this.autoHideLineups()
+  ));
+
+  protected readonly visibleResultPoints = computed(() => {
+    const points = this.currentResultPoints();
+    if (!this.lineupsHidden()) {
+      return points;
+    }
+
+    const selectedPoint = this.selectedPoint();
+    const draftPoint = this.draftPoint();
+    const activeGroupId = selectedPoint
+      ? this.resultSpotGroupKey(selectedPoint)
+      : draftPoint
+        ? this.resultSpotGroupKey(draftPoint)
+        : null;
+
+    return points.filter((point) => (
+      !point.grenadeCategoryId ||
+      (activeGroupId !== null && this.resultSpotGroupKey(point) === activeGroupId)
+    ));
+  });
+
+  protected readonly lineupVisibilityTip = computed(() => (
+    this.lineupsHidden() ? 'Lineups hidden - H to show' : 'Lineups visible - H to hide'
   ));
 
   protected readonly selectedPoint = computed(() => {
@@ -1715,10 +1750,6 @@ export class App {
       target.closest('.level-switcher') ||
       target.closest('.map-bottom-rail')
     ) {
-      return;
-    }
-
-    if ((this.selectedPointMode() === 'edit' || this.trajectoryEditMode()) && this.mapZoom() <= 1) {
       return;
     }
 
@@ -3283,6 +3314,12 @@ export class App {
       return;
     }
 
+    if (event.key.toLowerCase() === 'h' && !this.isTextEditingActive(event.target)) {
+      event.preventDefault();
+      this.lineupsHiddenOverride.set(!this.lineupsHidden());
+      return;
+    }
+
     if ((event.key === 'Delete' || event.key === 'Backspace') && !this.isTextEditingActive(event.target)) {
       const selectedTrajectoryVertexId = this.selectedTrajectoryVertexId();
       const selectedMediaId = this.selectedMediaId();
@@ -3725,23 +3762,22 @@ export class App {
     const mapY = (cursorY - pan.y) / oldZoom;
 
     this.mapZoom.set(zoom);
-
-    if (zoom === 1) {
-      this.mapPan.set({ x: 0, y: 0 });
-      return;
-    }
-
-    this.mapPan.set({
-      x: cursorX - mapX * zoom,
-      y: cursorY - mapY * zoom,
-    });
+    this.mapPan.set(this.clampMapPan(
+      {
+        x: cursorX - mapX * zoom,
+        y: cursorY - mapY * zoom,
+      },
+      board,
+      zoom,
+    ));
   }
 
   private updateMapPanFromDrag(event: PointerEvent): void {
-    if (!this.dragState || this.mapZoom() <= 1) {
+    if (!this.dragState) {
       return;
     }
 
+    const board = event.currentTarget as HTMLElement;
     const dx = event.clientX - this.dragState.startClientX;
     const dy = event.clientY - this.dragState.startClientY;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
@@ -3749,10 +3785,10 @@ export class App {
     }
 
     const startedAt = performance.now();
-    this.mapPan.set({
+    this.mapPan.set(this.clampMapPan({
       x: this.dragState.startPanX + dx,
       y: this.dragState.startPanY + dy,
-    });
+    }, board));
     const duration = performance.now() - startedAt;
     if (duration > 12) {
       this.recordPerformance('map:pan-frame', duration, { zoom: this.mapZoom() });
@@ -3777,6 +3813,34 @@ export class App {
   private resetMapView(): void {
     this.mapZoom.set(1);
     this.mapPan.set({ x: 0, y: 0 });
+  }
+
+  private clampMapPan(
+    pan: { x: number; y: number },
+    board: HTMLElement,
+    zoom = this.mapZoom(),
+  ): { x: number; y: number } {
+    const boardRect = board.getBoundingClientRect();
+    const surface = board.querySelector('.map-surface') as HTMLElement | null;
+    const surfaceRect = surface?.getBoundingClientRect() ?? boardRect;
+    const surfaceLeft = surfaceRect.left - boardRect.left;
+    const surfaceTop = surfaceRect.top - boardRect.top;
+    const safezone = Math.min(120, Math.max(48, Math.min(boardRect.width, boardRect.height) * 0.12));
+    const contentWidth = surfaceRect.width * zoom;
+    const contentHeight = surfaceRect.height * zoom;
+
+    return {
+      x: this.clamp(
+        pan.x,
+        safezone - surfaceLeft - contentWidth,
+        boardRect.width - safezone - surfaceLeft,
+      ),
+      y: this.clamp(
+        pan.y,
+        safezone - surfaceTop - contentHeight,
+        boardRect.height - safezone - surfaceTop,
+      ),
+    };
   }
 
   private async addMediaFiles(files: FileList | File[]): Promise<void> {

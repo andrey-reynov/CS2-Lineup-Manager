@@ -200,6 +200,25 @@ describe('ImageEditorComponent', () => {
     expect(editor.annotations[0].end).toEqual({ x: 150, y: 150 });
   });
 
+  it('should align lines and arrows horizontally or vertically while holding Shift', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { annotations: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Arrow"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 21, button: 0, clientX: 10, clientY: 10 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 21, clientX: 70, clientY: 40, shiftKey: true }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 21, clientX: 70, clientY: 40, shiftKey: true }));
+
+    expect(editor.annotations[0].end).toEqual({ x: 70, y: 10 });
+
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 22, button: 0, clientX: 70, clientY: 10 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 22, clientX: 80, clientY: 100, shiftKey: true }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 22, clientX: 80, clientY: 100, shiftKey: true }));
+
+    expect(editor.annotations[0].end).toEqual({ x: 10, y: 100 });
+  });
+
   it('should move a freshly selected shape before drawing another one', async () => {
     const fixture = await createEditor();
     const editor = fixture.componentInstance as unknown as {
@@ -392,6 +411,45 @@ describe('ImageEditorComponent', () => {
     expect(editor.annotations[0].color).toContain('rgba(63, 185, 80');
   });
 
+  it('should change the selected annotation stroke width after placement', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { annotations: Array<{ strokeWidth: number }> };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Rectangle"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 23, button: 0, clientX: 30, clientY: 30 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 23, clientX: 120, clientY: 90 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 23, clientX: 120, clientY: 90 }));
+    fixture.detectChanges();
+
+    const strokeInput = fixture.nativeElement.querySelector('.image-editor-control input[type="range"]') as HTMLInputElement;
+    strokeInput.value = '12';
+    strokeInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(editor.annotations[0].strokeWidth).toBe(12);
+  });
+
+  it('should edit selected text in place', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { annotations: Array<{ text: string }> };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Text"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('input[type="text"]') as HTMLInputElement).value = 'Aim here';
+    (fixture.nativeElement.querySelector('input[type="text"]') as HTMLInputElement).dispatchEvent(new Event('input'));
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 24, button: 0, clientX: 60, clientY: 60 }));
+    fixture.detectChanges();
+
+    const inlineInput = fixture.nativeElement.querySelector('[aria-label="Edit selected text"]') as HTMLInputElement;
+    inlineInput.value = 'Land here';
+    inlineInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(editor.annotations[0].text).toBe('Land here');
+  });
+
   it('should update color from the saturation value picker', async () => {
     const fixture = await createEditor();
     const editor = fixture.componentInstance as unknown as { color: string };
@@ -466,14 +524,22 @@ describe('ImageEditorComponent', () => {
     expect(fixture.nativeElement.querySelector('.image-editor-save-menu')).toBeTruthy();
   });
 
-  it('should cancel from Escape without changing annotations', async () => {
+  it('should not close from Escape and should delete a freshly autoselected annotation', async () => {
     const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { annotations: unknown[] };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
     const cancels: void[] = [];
     fixture.componentInstance.cancel.subscribe(() => cancels.push(undefined));
 
+    (fixture.nativeElement.querySelector('[aria-label="Rectangle"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 25, button: 0, clientX: 30, clientY: 30 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 25, clientX: 120, clientY: 90 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 25, clientX: 120, clientY: 90 }));
+    expect(editor.annotations).toHaveLength(1);
+
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
-    expect(cancels).toHaveLength(1);
-    expect((fixture.componentInstance as unknown as { annotations: unknown[] }).annotations).toHaveLength(0);
+    expect(cancels).toHaveLength(0);
+    expect(editor.annotations).toHaveLength(0);
   });
 });

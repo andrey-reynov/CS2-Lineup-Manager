@@ -117,7 +117,7 @@
 
         <label class="image-editor-control">
           <span>Stroke</span>
-          <input type="range" min="2" max="18" step="1" [(ngModel)]="strokeWidth" />
+          <input type="range" min="2" max="18" step="1" [(ngModel)]="strokeWidth" (input)="applyStrokeWidthToSelected()" />
         </label>
 
         @if (tool === 'text') {
@@ -182,6 +182,16 @@
               }
             }
           </div>
+          @if (selectedType === 'text') {
+            <input
+              type="text"
+              class="image-editor-inline-text"
+              aria-label="Edit selected text"
+              [ngStyle]="selectedTextEditorStyle()"
+              [ngModel]="selectedTextValue()"
+              (ngModelChange)="updateSelectedText($event)"
+            />
+          }
         }
         @if (errorMessage) {
           <p class="image-editor-error">{{ errorMessage }}</p>

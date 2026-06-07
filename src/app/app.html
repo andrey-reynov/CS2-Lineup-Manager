@@ -243,7 +243,6 @@
             class="map-board"
             role="img"
             [attr.aria-label]="map.name + ' radar, ' + level.name"
-            [class.is-panning]="mapZoom() > 1"
             (pointerdown)="onBoardPointerDown($event)"
             (pointermove)="onBoardPointerMove($event)"
             (pointerup)="onBoardPointerUp($event)"
@@ -310,7 +309,7 @@
                   }
                 }
 
-                @for (point of currentResultPoints(); track resultSpotId(point)) {
+                @for (point of visibleResultPoints(); track resultSpotId(point)) {
                   <button
                     class="map-point"
                     type="button"
@@ -360,6 +359,10 @@
                 }
               </div>
             }
+
+            <div class="lineup-visibility-tip" aria-live="polite">
+              {{ lineupVisibilityTip() }}
+            </div>
 
             <div
               class="map-bottom-rail"

@@ -423,6 +423,26 @@
   border-radius: 6px;
 }
 
+.image-editor-inline-text {
+  position: absolute;
+  z-index: 3;
+  min-width: 32px;
+  min-height: 22px;
+  padding: 0 2px;
+  font: inherit;
+  font-family: sans-serif;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--vscode-focus-ring);
+  border-radius: 3px;
+  outline: 0;
+}
+
+.image-editor-inline-text:focus {
+  background: rgba(0, 0, 0, 0.42);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
 .image-editor-save-area {
   position: relative;
 }

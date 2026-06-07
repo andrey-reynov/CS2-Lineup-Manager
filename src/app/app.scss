@@ -1238,14 +1238,6 @@ h2 {
   width: 100%;
 }
 
-.map-board.is-panning {
-  cursor: grab;
-}
-
-.map-board.is-panning:active {
-  cursor: grabbing;
-}
-
 .map-surface {
   position: absolute;
   inset: 0;
@@ -1302,8 +1294,8 @@ h2 {
     0 0 0 2px color-mix(in srgb, var(--vscode-text) 38%, transparent),
     0 8px 16px var(--vscode-shadow);
   cursor: pointer;
-  margin: -14px 0 0 -14px;
   pointer-events: auto;
+  transform: translate(-50%, -50%);
 }
 
 .map-point.is-ct {
@@ -1320,7 +1312,7 @@ h2 {
 
 .map-point:hover {
   z-index: 4;
-  transform: scale(1.18);
+  transform: translate(-50%, -50%) scale(1.18);
 }
 
 .map-point.is-dragging {
@@ -1368,17 +1360,16 @@ h2 {
 .trajectory-vertex {
   width: 10px;
   height: 10px;
-  margin: -5px 0 0 -5px;
   background: #ffffff;
   border: 0;
   box-shadow: none;
   cursor: default;
+  transform: translate(-50%, -50%);
 }
 
 .trajectory-vertex.is-start {
   width: 12px;
   height: 12px;
-  margin: -6px 0 0 -6px;
   background: #ffffff;
 }
 
@@ -1398,11 +1389,11 @@ h2 {
 .trajectory-midpoint {
   width: 8px;
   height: 8px;
-  margin: -4px 0 0 -4px;
   background: #ffffff;
   border: 0;
   opacity: 0;
   cursor: default;
+  transform: translate(-50%, -50%);
 }
 
 .map-stage.is-editing-lineup .trajectory-vertex {
@@ -1512,6 +1503,26 @@ h2 {
 .map-bottom-rail::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+
+.lineup-visibility-tip {
+  position: absolute;
+  left: 50%;
+  bottom: 82px;
+  z-index: 7;
+  padding: 5px 9px;
+  color: var(--vscode-text-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--vscode-overlay-bg) 72%, transparent);
+  border: 1px solid var(--vscode-border-muted);
+  border-radius: 999px;
+  box-shadow: 0 10px 28px var(--vscode-shadow);
+  transform: translateX(-50%);
+  backdrop-filter: blur(14px);
 }
 
 .playlist-filter,
