@@ -756,7 +756,60 @@ h2 {
   text-transform: uppercase;
 }
 
+.playlist-card {
+  position: relative;
+  grid-template-columns: 32px minmax(0, 1fr);
+  min-height: 74px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(10, 11, 14, 0.88), rgba(10, 11, 14, 0.54)),
+    var(--playlist-bg),
+    var(--vscode-control-bg);
+  background-position: center;
+  background-size: cover;
+}
+
+.playlist-card::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background: color-mix(in srgb, var(--vscode-control-bg) 20%, transparent);
+}
+
+.playlist-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.playlist-card button {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  min-height: 54px;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.playlist-card-check {
+  display: grid;
+  place-items: center;
+  min-height: 54px;
+}
+
+.playlist-card-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--vscode-accent);
+  cursor: pointer;
+}
+
 .playlist-card.is-active {
+  border-color: var(--vscode-focus-ring);
   box-shadow:
     inset 3px 0 0 var(--vscode-accent),
     0 10px 28px color-mix(in srgb, var(--vscode-shadow) 68%, transparent);
@@ -835,13 +888,18 @@ h2 {
 }
 
 .playlist-lineup-card {
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
 }
 
-.playlist-lineup-card > label {
-  display: grid;
-  place-items: center;
+.playlist-lineup-card.is-editable {
+  grid-template-columns: 26px minmax(0, 1fr) 92px;
+  cursor: pointer;
+}
+
+.playlist-lineup-card.is-editable > input {
+  justify-self: center;
+  accent-color: var(--vscode-accent);
 }
 
 .playlist-lineup-card > button {
@@ -856,6 +914,10 @@ h2 {
   background: transparent;
   border: 0;
   cursor: pointer;
+}
+
+.playlist-edit-lineups {
+  min-height: 0;
 }
 
 .playlist-assignment {
@@ -2400,7 +2462,8 @@ h2 {
 }
 
 .media-context-menu,
-.trajectory-context-menu {
+.trajectory-context-menu,
+.playlist-context-menu {
   position: absolute;
   z-index: 12;
   display: grid;
@@ -2415,7 +2478,8 @@ h2 {
 }
 
 .media-context-menu button,
-.trajectory-context-menu button {
+.trajectory-context-menu button,
+.playlist-context-menu button {
   min-height: 30px;
   color: var(--vscode-text);
   font: inherit;
@@ -2428,7 +2492,8 @@ h2 {
 }
 
 .media-context-menu button:hover,
-.trajectory-context-menu button:hover {
+.trajectory-context-menu button:hover,
+.playlist-context-menu button:hover {
   color: var(--vscode-text-strong);
   background: var(--vscode-accent);
   border-color: var(--vscode-focus-ring);

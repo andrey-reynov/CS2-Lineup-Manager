@@ -19,6 +19,9 @@
           <button type="button" [class.is-active]="tool === 'pen'" title="Pen" aria-label="Pen" (click)="selectTool('pen')">
             <span class="ui-icon" style="--icon-url: url('/icons/paint_fill.svg')" aria-hidden="true"></span>
           </button>
+          <button type="button" [class.is-active]="tool === 'eraser'" title="Eraser" aria-label="Eraser" (click)="selectTool('eraser')">
+            <span class="ui-icon" style="--icon-url: url('/icons/delete_outline.svg')" aria-hidden="true"></span>
+          </button>
           <button type="button" [class.is-active]="tool === 'arrow'" title="Arrow" aria-label="Arrow" (click)="selectTool('arrow')">
             <span class="ui-icon" style="--icon-url: url('/icons/arrow_outline.svg')" aria-hidden="true"></span>
           </button>
@@ -36,16 +39,57 @@
           </button>
         </div>
 
-        <div class="image-editor-tool-group is-colors" aria-label="Colors">
-          @for (option of colors; track option) {
-            <button
-              type="button"
-              class="image-editor-color"
-              [class.is-active]="color === option"
-              [style.--editor-color]="option"
-              [attr.aria-label]="'Color ' + option"
-              (click)="setColor(option)"
-            ></button>
+        <div class="image-editor-color-picker">
+          <button
+            type="button"
+            class="image-editor-color-button"
+            aria-label="Choose color"
+            [style.--editor-color]="color"
+            (click)="toggleColorPicker($event)"
+          ></button>
+          @if (colorPickerOpen) {
+            <div class="image-editor-color-menu" aria-label="Color picker" [ngStyle]="colorMenuStyle()">
+              <div
+                class="image-editor-sv-picker"
+                [style.background]="saturationValueBackground()"
+                (pointerdown)="onColorPointerDown('sv', $event)"
+                (pointermove)="onCanvasPointerMove($event)"
+                (pointerup)="onCanvasPointerUp($event)"
+                (pointercancel)="onCanvasPointerUp($event)"
+              >
+                <span [ngStyle]="saturationValueHandleStyle()"></span>
+              </div>
+              <div
+                class="image-editor-hue-picker"
+                (pointerdown)="onColorPointerDown('hue', $event)"
+                (pointermove)="onCanvasPointerMove($event)"
+                (pointerup)="onCanvasPointerUp($event)"
+                (pointercancel)="onCanvasPointerUp($event)"
+              >
+                <span [ngStyle]="hueHandleStyle()"></span>
+              </div>
+              <div
+                class="image-editor-alpha-picker"
+                [style.--alpha-track]="alphaTrackBackground()"
+                (pointerdown)="onColorPointerDown('alpha', $event)"
+                (pointermove)="onCanvasPointerMove($event)"
+                (pointerup)="onCanvasPointerUp($event)"
+                (pointercancel)="onCanvasPointerUp($event)"
+              >
+                <span [ngStyle]="alphaHandleStyle()"></span>
+              </div>
+              <div class="image-editor-premade-colors">
+                @for (option of colors; track option) {
+                  <button
+                    type="button"
+                    class="image-editor-color"
+                    [style.--editor-color]="option"
+                    [attr.aria-label]="'Color ' + option"
+                    (click)="setPresetColor(option)"
+                  ></button>
+                }
+              </div>
+            </div>
           }
         </div>
 
@@ -79,6 +123,18 @@
             <span class="ui-icon" style="--icon-url: url('/icons/close_fill.svg')" aria-hidden="true"></span>
           </button>
         </div>
+
+        <div class="image-editor-tool-group">
+          <button type="button" title="Zoom out" aria-label="Zoom out" (click)="zoomOut()">
+            <span aria-hidden="true">-</span>
+          </button>
+          <button type="button" title="Zoom in" aria-label="Zoom in" (click)="zoomIn()">
+            <span aria-hidden="true">+</span>
+          </button>
+          <button type="button" title="Reset zoom" aria-label="Reset zoom" (click)="resetZoom()">
+            <span aria-hidden="true">{{ zoom | number: '1.0-1' }}x</span>
+          </button>
+        </div>
       </aside>
 
       <div class="image-editor-stage">
@@ -86,10 +142,13 @@
           #canvas
           class="image-editor-canvas"
           [class.is-loading]="isLoading"
+          [class.is-zoomed]="zoom > 1"
+          [style.transform]="canvasTransform()"
           (pointerdown)="onCanvasPointerDown($event)"
           (pointermove)="onCanvasPointerMove($event)"
           (pointerup)="onCanvasPointerUp($event)"
           (pointercancel)="onCanvasPointerUp($event)"
+          (wheel)="onEditorWheel($event)"
         ></canvas>
         @if (errorMessage) {
           <p class="image-editor-error">{{ errorMessage }}</p>

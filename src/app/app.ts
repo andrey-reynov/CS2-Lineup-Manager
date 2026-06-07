@@ -132,6 +132,12 @@ type TrajectoryVertexContextMenu = {
   isLast: boolean;
 };
 
+type PlaylistContextMenu = {
+  playlistId: string;
+  x: number;
+  y: number;
+};
+
 type AppView = 'home' | 'map' | 'settings';
 type PointMode = 'view' | 'edit';
 type TeamSideFilter = TeamSide | 'any';
@@ -595,6 +601,7 @@ export class App {
   protected readonly playlistAssignmentOpen = signal(false);
   protected readonly pendingLineupPlaylistIds = signal<string[] | null>(null);
   protected readonly playlistDeleteConfirmation = signal<PlaylistDeleteConfirmation | null>(null);
+  protected readonly playlistContextMenu = signal<PlaylistContextMenu | null>(null);
   protected readonly playlistSaveError = signal<string | null>(null);
   protected readonly isRailCompact = signal(false);
   protected readonly activeRailPopover = signal<RailPopover | null>(null);
@@ -1153,6 +1160,7 @@ export class App {
     this.playlistDraft.set(null);
     this.playlistLineupDraftIds.set([]);
     this.playlistDeleteConfirmation.set(null);
+    this.closePlaylistContextMenu();
     this.playlistSaveError.set(null);
     this.updateRailCompactMode();
   }
@@ -1174,6 +1182,7 @@ export class App {
     this.selectedPlaylistIds.set(shouldSelect
       ? Array.from(new Set([...current, playlistId]))
       : current.filter((id) => id !== playlistId));
+    this.closePlaylistContextMenu();
     this.closePointEditor();
   }
 
@@ -1184,12 +1193,38 @@ export class App {
   protected openPlaylistDetail(playlist: StoredPlaylist, event?: Event): void {
     event?.preventDefault();
     event?.stopPropagation();
+    this.closePlaylistContextMenu();
     this.selectedPlaylistId.set(playlist.id);
     this.playlistLineupDraftIds.set([...(this.playlistMemberships()[playlist.id] ?? [])]);
     this.playlistPanelMode.set('detail');
     this.playlistDraft.set(null);
     this.playlistDeleteConfirmation.set(null);
     this.playlistSaveError.set(null);
+  }
+
+  protected openPlaylistContextMenu(playlist: StoredPlaylist, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.selectedPlaylistId.set(playlist.id);
+    this.playlistContextMenu.set({
+      playlistId: playlist.id,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  protected closePlaylistContextMenu(): void {
+    this.playlistContextMenu.set(null);
+  }
+
+  protected editPlaylistFromContext(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const playlist = this.playlists().find((item) => item.id === this.playlistContextMenu()?.playlistId);
+    this.closePlaylistContextMenu();
+    if (playlist) {
+      this.editSelectedPlaylist(undefined, playlist);
+    }
   }
 
   protected createPlaylist(event?: Event): void {
@@ -1212,14 +1247,16 @@ export class App {
     this.playlistSaveError.set(null);
   }
 
-  protected editSelectedPlaylist(event?: Event): void {
+  protected editSelectedPlaylist(event?: Event, playlistOverride?: StoredPlaylist): void {
     event?.preventDefault();
     event?.stopPropagation();
-    const playlist = this.selectedPlaylist();
+    const playlist = playlistOverride ?? this.selectedPlaylist();
     if (!playlist) {
       return;
     }
 
+    this.selectedPlaylistId.set(playlist.id);
+    this.playlistLineupDraftIds.set([...(this.playlistMemberships()[playlist.id] ?? [])]);
     this.playlistDraft.set({
       id: playlist.id,
       title: playlist.title,
@@ -1233,6 +1270,7 @@ export class App {
     });
     this.playlistPanelMode.set('edit');
     this.playlistDeleteConfirmation.set(null);
+    this.closePlaylistContextMenu();
     this.playlistSaveError.set(null);
   }
 
@@ -1328,6 +1366,9 @@ export class App {
     };
     try {
       await this.storage.savePlaylist(playlist);
+      if (this.selectedPlaylistId()) {
+        await this.storage.setPlaylistLineups(playlist.id, this.playlistLineupDraftIds());
+      }
       await this.loadStoredPlaylists();
       this.playlistSaveError.set(null);
       const savedPlaylist = this.playlists().find((item) => item.id === playlist.id) ?? playlist;
@@ -1641,6 +1682,7 @@ export class App {
       target.closest('.trajectory-midpoint') ||
       target.closest('.point-details') ||
       target.closest('.point-action-menu') ||
+      target.closest('.playlist-context-menu') ||
       target.closest('.trajectory-context-menu') ||
       target.closest('.level-switcher') ||
       target.closest('.map-bottom-rail')
@@ -3242,6 +3284,9 @@ export class App {
     if (!target.closest('.point-action-menu') && !target.closest('.map-point')) {
       this.closePointActionMenu();
     }
+    if (!target.closest('.playlist-context-menu') && !target.closest('.playlist-card')) {
+      this.closePlaylistContextMenu();
+    }
     if (!target.closest('.media-context-menu') && !target.closest('.media-tile')) {
       this.closeMediaContextMenu();
       this.selectedMediaId.set(null);
@@ -3754,6 +3799,7 @@ export class App {
       target.closest('button') ||
       target.closest('.point-details') ||
       target.closest('.point-action-menu') ||
+      target.closest('.playlist-context-menu') ||
       target.closest('.media-context-menu') ||
       target.closest('.trajectory-context-menu') ||
       target.closest('.level-switcher') ||

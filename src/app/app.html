@@ -610,23 +610,30 @@
 
             <div class="lineup-choice-list" aria-label="Playlist list">
               @for (playlist of playlists(); track playlist.id) {
-                <button
-                  type="button"
+                <div
                   class="lineup-choice-card playlist-card"
                   [class.is-active]="isPlaylistFilterSelected(playlist.id)"
-                  (click)="openPlaylistDetail(playlist, $event)"
+                  [style.--playlist-bg]="'url(' + playlist.thumbnailUrl + ')'"
+                  (contextmenu)="openPlaylistContextMenu(playlist, $event)"
                 >
-                  <span class="lineup-choice-copy">
-                    <strong>{{ playlist.title }}</strong>
-                    <small>
-                      {{ playlistLineupCount(playlist.id) }}
-                      {{ playlistLineupCount(playlist.id) === 1 ? 'lineup' : 'lineups' }}
-                    </small>
-                  </span>
-                  <span class="lineup-choice-preview">
-                    <img [src]="playlist.thumbnailUrl" [alt]="playlist.title" />
-                  </span>
-                </button>
+                  <label class="playlist-card-check" [attr.aria-label]="'Filter by ' + playlist.title">
+                    <input
+                      type="checkbox"
+                      [checked]="isPlaylistFilterSelected(playlist.id)"
+                      (change)="togglePlaylistFilter(playlist.id, $any($event.target).checked)"
+                      (click)="$event.stopPropagation()"
+                    />
+                  </label>
+                  <button type="button" (click)="openPlaylistDetail(playlist, $event)">
+                    <span class="lineup-choice-copy">
+                      <strong>{{ playlist.title }}</strong>
+                      <small>
+                        {{ playlistLineupCount(playlist.id) }}
+                        {{ playlistLineupCount(playlist.id) === 1 ? 'lineup' : 'lineups' }}
+                      </small>
+                    </span>
+                  </button>
+                </div>
               } @empty {
                 <p class="playlist-empty">No playlists yet</p>
               }
@@ -653,37 +660,9 @@
                 </button>
               </div>
 
-              <button
-                type="button"
-                class="playlist-filter-toggle"
-                [class.is-active]="isPlaylistFilterSelected(playlist.id)"
-                (click)="togglePlaylistFilter(playlist.id)"
-              >
-                <span
-                  class="ui-icon"
-                  style="--icon-url: url('/icons/check_outline.svg')"
-                  aria-hidden="true"
-                ></span>
-                {{ isPlaylistFilterSelected(playlist.id) ? 'Selected in filter' : 'Select in filter' }}
-              </button>
-
-              <div class="playlist-hero">
-                <img [src]="playlist.thumbnailUrl" [alt]="playlist.title" />
-                @if (playlist.description) {
-                  <p>{{ playlist.description }}</p>
-                }
-              </div>
-
               <div class="playlist-lineup-list" aria-label="Playlist lineups">
                 @for (lineup of selectedPlaylistMemberLineups(); track lineup.id) {
                   <div class="lineup-choice-card playlist-lineup-card">
-                    <label>
-                      <input
-                        type="checkbox"
-                        [checked]="isLineupInSelectedPlaylist(lineup.id)"
-                        (change)="toggleSelectedPlaylistLineup(lineup.id, $any($event.target).checked)"
-                      />
-                    </label>
                     <button type="button" (click)="openPlaylistLineupPreview(lineup, $event)">
                       <span class="lineup-choice-copy">
                         <strong>{{ displayTitle(lineup) }}</strong>
@@ -708,11 +687,7 @@
               </div>
 
               <div class="lineup-detail-actions">
-                <button type="button" class="edit-button" (click)="saveSelectedPlaylistLineups($event)">
-                  <span class="ui-icon" style="--icon-url: url('/icons/save_fill.svg')" aria-hidden="true"></span>
-                  Save
-                </button>
-                <button type="button" class="edit-button is-secondary" (click)="editSelectedPlaylist($event)">
+                <button type="button" class="edit-button" (click)="editSelectedPlaylist($event)">
                   <span class="ui-icon" style="--icon-url: url('/icons/edit_outline.svg')" aria-hidden="true"></span>
                   Edit
                 </button>
@@ -750,6 +725,42 @@
                 ></textarea>
               </label>
 
+              @if (selectedPlaylist()) {
+                <div class="field playlist-edit-lineups">
+                  <span>Lineups</span>
+                  <div class="playlist-lineup-list" aria-label="Edit playlist lineups">
+                    @for (lineup of selectedPlaylistMemberLineups(); track lineup.id) {
+                      <label class="lineup-choice-card playlist-lineup-card is-editable">
+                        <input
+                          type="checkbox"
+                          [checked]="isLineupInSelectedPlaylist(lineup.id)"
+                          (change)="toggleSelectedPlaylistLineup(lineup.id, $any($event.target).checked)"
+                        />
+                        <span class="lineup-choice-copy">
+                          <strong>{{ displayTitle(lineup) }}</strong>
+                          <small>{{ startPoint(lineup) ? 'Start set' : 'No start point' }}</small>
+                        </span>
+                        <span class="lineup-choice-preview" [class.is-empty]="!guideSlotMedia(lineup, 'start')">
+                          @if (guideSlotMedia(lineup, 'start'); as media) {
+                            @if (media.type === 'image') {
+                              <img [src]="media.url" [alt]="media.name" />
+                            } @else {
+                              <video [src]="media.url" muted></video>
+                            }
+                          } @else {
+                            <em>Start</em>
+                          }
+                        </span>
+                      </label>
+                    } @empty {
+                      <p class="playlist-empty">No lineups in this playlist</p>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Thumbnail upload is paused while playlist art is generated and used as list-card background. -->
+              <!--
               <div class="field">
                 <span>Thumbnail</span>
                 <div class="playlist-thumbnail-actions">
@@ -769,6 +780,7 @@
                   }
                 </div>
               </div>
+              -->
 
               @if (playlistSaveError()) {
                 <p class="settings-error">{{ playlistSaveError() }}</p>
@@ -788,6 +800,17 @@
             }
           }
         </aside>
+
+        @if (playlistContextMenu(); as menu) {
+          <div
+            class="playlist-context-menu"
+            [style.left.px]="menu.x"
+            [style.top.px]="menu.y"
+            (click)="$event.stopPropagation()"
+          >
+            <button type="button" (click)="editPlaylistFromContext($event)">Settings</button>
+          </div>
+        }
       } @else if (selectedPoint(); as point) {
         @if (selectedPointMode() === 'view' && lineupChooserOpen() && selectedResultSpotVariants().length > 1) {
           <aside class="point-details is-view is-lineup-chooser" aria-label="Lineup variants" animate.enter="panel-slide-enter" animate.leave="panel-slide-leave">
