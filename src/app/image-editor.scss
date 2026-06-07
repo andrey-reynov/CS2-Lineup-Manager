@@ -173,6 +173,31 @@
   transform: rotate(-32deg);
 }
 
+.image-editor-shape-icon.is-callout-rectangle,
+.image-editor-shape-icon.is-callout-circle {
+  position: relative;
+}
+
+.image-editor-shape-icon.is-callout-circle {
+  border-radius: 50%;
+}
+
+.image-editor-shape-icon.is-callout-rectangle::after,
+.image-editor-shape-icon.is-callout-circle::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  border: 1px solid currentColor;
+  background: var(--vscode-control-bg);
+}
+
+.image-editor-shape-icon.is-callout-circle::after {
+  border-radius: 50%;
+}
+
 .image-editor-color-picker {
   position: relative;
 }
@@ -341,6 +366,10 @@
     0 0 0 1px rgba(0, 0, 0, 0.6),
     inset 0 0 0 1px rgba(0, 0, 0, 0.35);
   transform: translateZ(0);
+}
+
+.image-editor-selection-outline.is-circle {
+  border-radius: 50%;
 }
 
 .image-editor-handle,

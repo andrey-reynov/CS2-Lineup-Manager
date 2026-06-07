@@ -31,7 +31,7 @@ export type ImageEditorSave = {
   mimeType: 'image/png';
 };
 
-type EditorTool = 'select' | 'pan' | 'pen' | 'eraser' | 'arrow' | 'rectangle' | 'circle' | 'line' | 'text';
+type EditorTool = 'select' | 'pan' | 'pen' | 'eraser' | 'arrow' | 'rectangle' | 'circle' | 'line' | 'text' | 'callout-rectangle' | 'callout-circle';
 type ResizeHandle = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 
 type Point = {
@@ -63,10 +63,24 @@ type TextAnnotation = BaseAnnotation & {
   fontSize: number;
 };
 
-type Annotation = PenAnnotation | ShapeAnnotation | TextAnnotation;
+type CalloutAnnotation = BaseAnnotation & {
+  type: 'callout';
+  shape: 'rectangle' | 'circle';
+  source: Bounds;
+  target: Bounds;
+  zoom: number;
+  sourceTransform?: {
+    upscaleEngine?: string;
+    sourceImageId?: string;
+    version: 1;
+  };
+};
+
+type Annotation = PenAnnotation | ShapeAnnotation | TextAnnotation | CalloutAnnotation;
 
 type DraftAnnotation = Annotation & {
   isDraft?: true;
+  draftStart?: Point;
 };
 
 type DragState =
@@ -293,6 +307,11 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     return this.selectedAnnotation()?.type;
   }
 
+  protected selectedCalloutShape(): CalloutAnnotation['shape'] | undefined {
+    const selected = this.selectedAnnotation();
+    return selected?.type === 'callout' ? selected.shape : undefined;
+  }
+
   protected selectedSelectionStyle(): Record<string, string> {
     const selected = this.selectedAnnotation();
     if (!selected) {
@@ -303,7 +322,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       return {};
     }
 
-    return this.screenBoundsStyle(this.annotationBounds(selected));
+    return this.screenBoundsStyle(selected.type === 'callout' ? selected.target : this.annotationBounds(selected));
   }
 
   protected selectedLineEndpointStyle(endpoint: 'start' | 'end'): Record<string, string> {
@@ -321,7 +340,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       return {};
     }
 
-    return this.screenPointStyle(this.handlePoint(this.annotationBounds(selected), handle));
+    return this.screenPointStyle(this.handlePoint(selected.type === 'callout' ? selected.target : this.annotationBounds(selected), handle));
   }
 
   protected zoomIn(): void {
@@ -526,7 +545,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
 
     const point = this.canvasPoint(event);
     if (dragState.mode === 'draw') {
-      this.updateDraftAnnotation(dragState.annotation, point);
+      this.updateDraftAnnotation(dragState.annotation, point, event.shiftKey);
       this.render(dragState.annotation);
       return;
     }
@@ -539,7 +558,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     if (dragState.mode === 'resize') {
       this.annotations = this.annotations.map((annotation) => (
         annotation.id === dragState.annotationId
-          ? this.resizeAnnotation(dragState.original, dragState.originalBounds, dragState.handle, point)
+          ? this.resizeAnnotation(dragState.original, dragState.originalBounds, dragState.handle, point, event.shiftKey)
           : annotation
       ));
       this.render();
@@ -738,6 +757,8 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       context.font = `${annotation.fontSize}px sans-serif`;
       context.textBaseline = 'top';
       context.fillText(annotation.text, annotation.position.x, annotation.position.y);
+    } else if (annotation.type === 'callout') {
+      this.drawCallout(context, annotation);
     } else {
       this.drawShape(context, annotation);
     }
@@ -796,6 +817,85 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     context.stroke();
   }
 
+  private drawCallout(context: CanvasRenderingContext2D, annotation: CalloutAnnotation): void {
+    const target = annotation.target;
+    const source = annotation.source;
+    const sourceCenter = this.boundsCenter(source);
+    const targetCenter = this.boundsCenter(target);
+    const arrowStart = this.boundsOutlinePoint(target, annotation.shape, sourceCenter);
+    const arrowEnd = this.boundsOutlinePoint(source, annotation.shape, targetCenter);
+
+    context.save();
+    context.strokeStyle = annotation.color;
+    context.lineWidth = annotation.strokeWidth;
+    context.setLineDash([8, 6]);
+    this.strokeBoundsShape(context, source, annotation.shape);
+    context.setLineDash([]);
+
+    context.save();
+    this.clipBoundsShape(context, target, annotation.shape);
+    if (this.image) {
+      context.drawImage(
+        this.image,
+        source.x,
+        source.y,
+        source.width,
+        source.height,
+        target.x,
+        target.y,
+        target.width,
+        target.height,
+      );
+    }
+    context.restore();
+
+    this.strokeBoundsShape(context, target, annotation.shape);
+
+    context.beginPath();
+    context.moveTo(arrowStart.x, arrowStart.y);
+    context.lineTo(arrowEnd.x, arrowEnd.y);
+    context.stroke();
+    this.drawArrowHead(context, arrowStart, arrowEnd, annotation.strokeWidth);
+    context.restore();
+  }
+
+  private strokeBoundsShape(context: CanvasRenderingContext2D, bounds: Bounds, shape: 'rectangle' | 'circle'): void {
+    if (shape === 'rectangle') {
+      context.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+      return;
+    }
+
+    context.beginPath();
+    context.ellipse(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+      bounds.width / 2,
+      bounds.height / 2,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    context.stroke();
+  }
+
+  private clipBoundsShape(context: CanvasRenderingContext2D, bounds: Bounds, shape: 'rectangle' | 'circle'): void {
+    context.beginPath();
+    if (shape === 'rectangle') {
+      context.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+    } else {
+      context.ellipse(
+        bounds.x + bounds.width / 2,
+        bounds.y + bounds.height / 2,
+        bounds.width / 2,
+        bounds.height / 2,
+        0,
+        0,
+        Math.PI * 2,
+      );
+    }
+    context.clip();
+  }
+
   private createDraftAnnotation(point: Point): DraftAnnotation {
     if (this.tool === 'pen') {
       return {
@@ -805,6 +905,25 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
         color: this.color,
         strokeWidth: this.strokeWidth,
         isDraft: true,
+      };
+    }
+
+    if (this.tool === 'callout-rectangle' || this.tool === 'callout-circle') {
+      return {
+        id: this.annotationId(),
+        type: 'callout',
+        shape: this.tool === 'callout-circle' ? 'circle' : 'rectangle',
+        source: { x: point.x, y: point.y, width: 1, height: 1 },
+        target: { x: point.x + 36, y: point.y + 36, width: 2, height: 2 },
+        zoom: 2,
+        color: this.color,
+        strokeWidth: this.strokeWidth,
+        sourceTransform: {
+          version: 1,
+          sourceImageId: this.media.id,
+        },
+        isDraft: true,
+        draftStart: point,
       };
     }
 
@@ -819,14 +938,29 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     } as DraftAnnotation;
   }
 
-  private updateDraftAnnotation(annotation: DraftAnnotation, point: Point): void {
+  private updateDraftAnnotation(annotation: DraftAnnotation, point: Point, lockAspect = false): void {
     if (annotation.type === 'pen') {
       annotation.points = [...annotation.points, point];
       return;
     }
 
+    if (annotation.type === 'callout') {
+      const start = annotation.draftStart ?? { x: annotation.source.x, y: annotation.source.y };
+      annotation.source = this.boundsFromDrag(start, point, lockAspect ? 1 : undefined);
+      annotation.zoom = 2;
+      annotation.target = {
+        x: annotation.source.x + annotation.source.width + 28,
+        y: annotation.source.y,
+        width: annotation.source.width * annotation.zoom,
+        height: annotation.source.height * annotation.zoom,
+      };
+      return;
+    }
+
     if (annotation.type !== 'text') {
-      annotation.end = point;
+      annotation.end = lockAspect && (annotation.type === 'rectangle' || annotation.type === 'circle')
+        ? this.lockPointToAspect(annotation.start, point, 1)
+        : point;
     }
   }
 
@@ -963,6 +1097,15 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       };
     }
 
+    if (annotation.type === 'callout') {
+      return {
+        x: annotation.target.x,
+        y: annotation.target.y,
+        width: annotation.target.width,
+        height: annotation.target.height,
+      };
+    }
+
     const x = Math.min(annotation.start.x, annotation.end.x);
     const y = Math.min(annotation.start.y, annotation.end.y);
     return {
@@ -973,7 +1116,13 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     };
   }
 
-  private resizeAnnotation(annotation: Annotation, originalBounds: Bounds, handle: ResizeHandle, point: Point): Annotation {
+  private resizeAnnotation(
+    annotation: Annotation,
+    originalBounds: Bounds,
+    handle: ResizeHandle,
+    point: Point,
+    lockAspect = false,
+  ): Annotation {
     if (annotation.type === 'line' || annotation.type === 'arrow') {
       return {
         ...annotation,
@@ -982,7 +1131,17 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       };
     }
 
-    const nextBounds = this.resizedBounds(originalBounds, handle, point);
+    if (annotation.type === 'callout') {
+      const nextTarget = this.resizedBounds(annotation.target, handle, point, lockAspect ? this.boundsAspect(originalBounds) : undefined);
+      return {
+        ...annotation,
+        target: nextTarget,
+        zoom: annotation.source.width > 0 ? nextTarget.width / annotation.source.width : annotation.zoom,
+      };
+    }
+
+    const shouldLockAspect = lockAspect && (annotation.type === 'rectangle' || annotation.type === 'circle');
+    const nextBounds = this.resizedBounds(originalBounds, handle, point, shouldLockAspect ? this.boundsAspect(originalBounds) : undefined);
     const sx = originalBounds.width === 0 ? 1 : nextBounds.width / originalBounds.width;
     const sy = originalBounds.height === 0 ? 1 : nextBounds.height / originalBounds.height;
     const scalePoint = (source: Point): Point => ({
@@ -1012,7 +1171,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     };
   }
 
-  private resizedBounds(bounds: Bounds, handle: ResizeHandle, point: Point): Bounds {
+  private resizedBounds(bounds: Bounds, handle: ResizeHandle, point: Point, aspectRatio?: number): Bounds {
     let left = bounds.x;
     let right = bounds.x + bounds.width;
     let top = bounds.y;
@@ -1029,6 +1188,10 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     if (handle.includes('s')) {
       bottom = point.y;
+    }
+
+    if (aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0) {
+      return this.lockBoundsToAspect({ left, right, top, bottom }, handle, aspectRatio);
     }
 
     return {
@@ -1054,6 +1217,18 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       };
     }
 
+    if (annotation.type === 'callout') {
+      return {
+        ...annotation,
+        target: {
+          x: annotation.target.x + dx,
+          y: annotation.target.y + dy,
+          width: annotation.target.width,
+          height: annotation.target.height,
+        },
+      };
+    }
+
     return {
       ...annotation,
       start: { x: annotation.start.x + dx, y: annotation.start.y + dy },
@@ -1074,7 +1249,137 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
       return { ...annotation, position: { ...annotation.position } };
     }
 
+    if (annotation.type === 'callout') {
+      return {
+        ...annotation,
+        source: { ...annotation.source },
+        target: { ...annotation.target },
+        sourceTransform: annotation.sourceTransform ? { ...annotation.sourceTransform } : undefined,
+      };
+    }
+
     return { ...annotation, start: { ...annotation.start }, end: { ...annotation.end } };
+  }
+
+  private boundsCenter(bounds: Bounds): Point {
+    return {
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
+    };
+  }
+
+  private boundsAspect(bounds: Bounds): number {
+    return bounds.width / Math.max(1, bounds.height);
+  }
+
+  private boundsFromDrag(start: Point, point: Point, aspectRatio?: number): Bounds {
+    if (aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0) {
+      const lockedPoint = this.lockPointToAspect(start, point, aspectRatio);
+      return {
+        x: Math.min(start.x, lockedPoint.x),
+        y: Math.min(start.y, lockedPoint.y),
+        width: Math.max(1, Math.abs(lockedPoint.x - start.x)),
+        height: Math.max(1, Math.abs(lockedPoint.y - start.y)),
+      };
+    }
+
+    return {
+      x: Math.min(start.x, point.x),
+      y: Math.min(start.y, point.y),
+      width: Math.max(1, Math.abs(point.x - start.x)),
+      height: Math.max(1, Math.abs(point.y - start.y)),
+    };
+  }
+
+  private lockPointToAspect(start: Point, point: Point, aspectRatio: number): Point {
+    const dx = point.x - start.x;
+    const dy = point.y - start.y;
+    const signX = dx < 0 ? -1 : 1;
+    const signY = dy < 0 ? -1 : 1;
+    let width = Math.abs(dx);
+    let height = Math.abs(dy);
+
+    if (width / Math.max(1, height) > aspectRatio) {
+      height = width / aspectRatio;
+    } else {
+      width = height * aspectRatio;
+    }
+
+    return {
+      x: start.x + width * signX,
+      y: start.y + height * signY,
+    };
+  }
+
+  private lockBoundsToAspect(
+    edges: { left: number; right: number; top: number; bottom: number },
+    handle: ResizeHandle,
+    aspectRatio: number,
+  ): Bounds {
+    let { left, right, top, bottom } = edges;
+    const fixedX = handle.includes('w') ? right : left;
+    const fixedY = handle.includes('n') ? bottom : top;
+    const movingX = handle.includes('w') ? left : right;
+    const movingY = handle.includes('n') ? top : bottom;
+    const dx = movingX - fixedX;
+    const dy = movingY - fixedY;
+    const signX = dx < 0 ? -1 : 1;
+    const signY = dy < 0 ? -1 : 1;
+    let width = Math.abs(dx);
+    let height = Math.abs(dy);
+
+    if (handle === 'n' || handle === 's') {
+      width = height * aspectRatio;
+    } else if (handle === 'e' || handle === 'w') {
+      height = width / aspectRatio;
+    } else if (width / Math.max(1, height) > aspectRatio) {
+      height = width / aspectRatio;
+    } else {
+      width = height * aspectRatio;
+    }
+
+    const nextMovingX = fixedX + width * signX;
+    const nextMovingY = fixedY + height * signY;
+    left = Math.min(fixedX, nextMovingX);
+    right = Math.max(fixedX, nextMovingX);
+    top = Math.min(fixedY, nextMovingY);
+    bottom = Math.max(fixedY, nextMovingY);
+
+    return {
+      x: left,
+      y: top,
+      width: Math.max(1, right - left),
+      height: Math.max(1, bottom - top),
+    };
+  }
+
+  private boundsOutlinePoint(bounds: Bounds, shape: 'rectangle' | 'circle', toward: Point): Point {
+    const center = this.boundsCenter(bounds);
+    const dx = toward.x - center.x;
+    const dy = toward.y - center.y;
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
+      return center;
+    }
+
+    const halfWidth = bounds.width / 2;
+    const halfHeight = bounds.height / 2;
+    if (shape === 'rectangle') {
+      const scaleX = halfWidth / Math.max(0.001, Math.abs(dx));
+      const scaleY = halfHeight / Math.max(0.001, Math.abs(dy));
+      const scale = Math.min(scaleX, scaleY);
+      return {
+        x: center.x + dx * scale,
+        y: center.y + dy * scale,
+      };
+    }
+
+    const radiusX = Math.max(0.001, halfWidth);
+    const radiusY = Math.max(0.001, halfHeight);
+    const scale = 1 / Math.sqrt((dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY));
+    return {
+      x: center.x + dx * scale,
+      y: center.y + dy * scale,
+    };
   }
 
   private rememberHistory(): void {

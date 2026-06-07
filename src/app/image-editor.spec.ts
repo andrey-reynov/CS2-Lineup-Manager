@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ImageEditorComponent, ImageEditorSave } from './image-editor';
 
+let canvasOperations: Array<{ name: string; args: number[] }> = [];
+
 class FakeImage {
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
@@ -19,23 +21,34 @@ function pointerEvent(type: string, init: PointerEventInit): PointerEvent {
     return new PointerEvent(type, { bubbles: true, ...init });
   }
 
-  const event = new MouseEvent(type, { bubbles: true, clientX: init.clientX, clientY: init.clientY }) as PointerEvent;
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    clientX: init.clientX,
+    clientY: init.clientY,
+    shiftKey: init.shiftKey,
+  }) as PointerEvent;
   Object.defineProperty(event, 'pointerId', { value: init.pointerId ?? 1 });
   return event;
 }
 
 function stubCanvas(): void {
+  canvasOperations = [];
+  const record = (name: string) => (...args: number[]) => {
+    canvasOperations.push({ name, args });
+  };
   const context = {
     arc: () => undefined,
     beginPath: () => undefined,
     clearRect: () => undefined,
+    clip: () => undefined,
     drawImage: () => undefined,
     ellipse: () => undefined,
     fill: () => undefined,
     fillRect: () => undefined,
     fillText: () => undefined,
-    lineTo: () => undefined,
-    moveTo: () => undefined,
+    lineTo: record('lineTo'),
+    moveTo: record('moveTo'),
+    rect: () => undefined,
     restore: () => undefined,
     save: () => undefined,
     setLineDash: () => undefined,
@@ -166,6 +179,27 @@ describe('ImageEditorComponent', () => {
     expect(editor.annotations[0].end).toEqual({ x: 160, y: 120 });
   });
 
+  it('should lock rectangle creation and resize aspect ratio while holding Shift', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { annotations: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Rectangle"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 17, button: 0, clientX: 30, clientY: 30 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 17, clientX: 90, clientY: 50, shiftKey: true }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 17, clientX: 90, clientY: 50, shiftKey: true }));
+    fixture.detectChanges();
+
+    expect(editor.annotations[0].end).toEqual({ x: 90, y: 90 });
+
+    (fixture.nativeElement.querySelector('[aria-label="Select"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 18, button: 0, clientX: 90, clientY: 90 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 18, clientX: 150, clientY: 110, shiftKey: true }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 18, clientX: 150, clientY: 110, shiftKey: true }));
+
+    expect(editor.annotations[0].end).toEqual({ x: 150, y: 150 });
+  });
+
   it('should move a freshly selected shape before drawing another one', async () => {
     const fixture = await createEditor();
     const editor = fixture.componentInstance as unknown as {
@@ -204,6 +238,94 @@ describe('ImageEditorComponent', () => {
     canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 13, clientX: 70, clientY: 55 }));
 
     expect(editor.pan).toEqual({ x: 30, y: 15 });
+  });
+
+  it('should create a rectangle zoom callout with source metadata and movable target', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as {
+      annotations: Array<{
+        type: string;
+        source: { x: number; y: number; width: number; height: number };
+        target: { x: number; y: number; width: number; height: number };
+        zoom: number;
+        sourceTransform?: { sourceImageId?: string; version: number };
+      }>;
+    };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Rectangle zoom callout"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 14, button: 0, clientX: 30, clientY: 30 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 14, clientX: 80, clientY: 60 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 14, clientX: 80, clientY: 60 }));
+    fixture.detectChanges();
+
+    expect(editor.annotations).toHaveLength(1);
+    expect(editor.annotations[0]).toMatchObject({
+      type: 'callout',
+      source: { x: 30, y: 30, width: 50, height: 30 },
+      target: { x: 108, y: 30, width: 100, height: 60 },
+      zoom: 2,
+      sourceTransform: { sourceImageId: 'media-1', version: 1 },
+    });
+
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 15, button: 0, clientX: 130, clientY: 45 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 15, clientX: 150, clientY: 65 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 15, clientX: 150, clientY: 65 }));
+
+    expect(editor.annotations[0].source).toEqual({ x: 30, y: 30, width: 50, height: 30 });
+    expect(editor.annotations[0].target).toEqual({ x: 128, y: 50, width: 100, height: 60 });
+  });
+
+  it('should draw zoom callout arrows from outline to outline', async () => {
+    const fixture = await createEditor();
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    canvasOperations = [];
+    (fixture.nativeElement.querySelector('[aria-label="Rectangle zoom callout"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 19, button: 0, clientX: 30, clientY: 30 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 19, clientX: 80, clientY: 60 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 19, clientX: 80, clientY: 60 }));
+
+    const connectorMove = canvasOperations.find((operation) => (
+      operation.name === 'moveTo' &&
+      Math.abs(operation.args[0] - 108) < 0.1 &&
+      Math.abs(operation.args[1] - 52.7) < 0.1
+    ));
+    const connectorLine = canvasOperations.find((operation) => (
+      operation.name === 'lineTo' &&
+      Math.abs(operation.args[0] - 80) < 0.1 &&
+      Math.abs(operation.args[1] - 48.6) < 0.1
+    ));
+
+    expect(connectorMove).toBeTruthy();
+    expect(connectorLine).toBeTruthy();
+  });
+
+  it('should lock zoom callout source to a square while holding Shift during creation', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { annotations: Array<{ source: { width: number; height: number }; target: { width: number; height: number } }> };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Circle zoom callout"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 20, button: 0, clientX: 40, clientY: 40 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 20, clientX: 100, clientY: 60, shiftKey: true }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 20, clientX: 100, clientY: 60, shiftKey: true }));
+
+    expect(editor.annotations[0].source).toEqual({ x: 40, y: 40, width: 60, height: 60 });
+    expect(editor.annotations[0].target).toEqual({ x: 128, y: 40, width: 120, height: 120 });
+  });
+
+  it('should create a circle zoom callout', async () => {
+    const fixture = await createEditor();
+    const editor = fixture.componentInstance as unknown as { annotations: Array<{ type: string; shape: string }> };
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+
+    (fixture.nativeElement.querySelector('[aria-label="Circle zoom callout"]') as HTMLButtonElement).click();
+    canvas.dispatchEvent(pointerEvent('pointerdown', { pointerId: 16, button: 0, clientX: 40, clientY: 40 }));
+    canvas.dispatchEvent(pointerEvent('pointermove', { pointerId: 16, clientX: 90, clientY: 90 }));
+    canvas.dispatchEvent(pointerEvent('pointerup', { pointerId: 16, clientX: 90, clientY: 90 }));
+
+    expect(editor.annotations[0]).toMatchObject({ type: 'callout', shape: 'circle' });
   });
 
   it('should erase annotations and restore them with Ctrl+Z', async () => {

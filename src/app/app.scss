@@ -529,17 +529,10 @@ h2 {
 }
 
 .add-map-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
   width: 100%;
-  min-height: 46px;
+  min-height: 72px;
   margin-top: 4px;
-}
-
-.add-map-button span {
-  --icon-size: 16px;
 }
 
 .add-map-button input {
@@ -1270,6 +1263,7 @@ h2 {
 
 .map-point {
   position: absolute;
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 28px;
@@ -1303,7 +1297,7 @@ h2 {
 }
 
 .map-point:hover {
-  z-index: 2;
+  z-index: 4;
   transform: scale(1.18);
 }
 

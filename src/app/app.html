@@ -63,10 +63,12 @@
           </button>
         }
 
-        <label class="add-map-button ui-button is-accent">
+        <label class="add-map-button lineup-choice-card playlist-create-card">
           <input type="file" accept="image/*" (change)="onCustomMapSelected($event)" />
-          <span class="ui-icon" style="--icon-url: url('/icons/add_fill.svg')" aria-hidden="true"></span>
-          Add custom
+          <span class="lineup-choice-copy">
+            <strong>Add custom</strong>
+            <small>Import a radar image from your computer</small>
+          </span>
         </label>
       </div>
     </section>

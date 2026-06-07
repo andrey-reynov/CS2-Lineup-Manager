@@ -51,6 +51,12 @@
           <button type="button" [class.is-active]="tool === 'text'" title="Text" aria-label="Text" (click)="selectTool('text')">
             <span aria-hidden="true">T</span>
           </button>
+          <button type="button" [class.is-active]="tool === 'callout-rectangle'" title="Rectangle zoom callout" aria-label="Rectangle zoom callout" (click)="selectTool('callout-rectangle')">
+            <span class="image-editor-shape-icon is-callout-rectangle" aria-hidden="true"></span>
+          </button>
+          <button type="button" [class.is-active]="tool === 'callout-circle'" title="Circle zoom callout" aria-label="Circle zoom callout" (click)="selectTool('callout-circle')">
+            <span class="image-editor-shape-icon is-callout-circle" aria-hidden="true"></span>
+          </button>
         </div>
 
         <div class="image-editor-color-picker">
@@ -164,7 +170,11 @@
               <span class="image-editor-endpoint" [ngStyle]="selectedLineEndpointStyle('start')"></span>
               <span class="image-editor-endpoint" [ngStyle]="selectedLineEndpointStyle('end')"></span>
             } @else {
-              <span class="image-editor-selection-outline" [ngStyle]="selectedSelectionStyle()"></span>
+              <span
+                class="image-editor-selection-outline"
+                [class.is-circle]="selectedCalloutShape() === 'circle'"
+                [ngStyle]="selectedSelectionStyle()"
+              ></span>
               @for (handle of resizeHandleOptions; track handle) {
                 <span class="image-editor-handle" [ngClass]="'is-' + handle" [ngStyle]="selectedHandleStyle(handle)"></span>
               }
