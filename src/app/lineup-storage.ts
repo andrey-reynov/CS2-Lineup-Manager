@@ -22,6 +22,13 @@ export type StoredMedia = {
   mimeType: string;
   blob: Blob;
   url: string;
+  thumbnailBlob?: Blob;
+  thumbnailUrl?: string;
+  thumbnailMimeType?: string;
+  previewBlob?: Blob;
+  previewUrl?: string;
+  previewMimeType?: string;
+  assetOnly?: boolean;
   role?: MediaRole;
   createdAt?: string;
   sourceLineupId?: string;
@@ -124,6 +131,10 @@ type MediaRecord = {
   type: MediaKind;
   mimeType: string;
   blob: Blob;
+  thumbnailBlob?: Blob;
+  thumbnailMimeType?: string;
+  previewBlob?: Blob;
+  previewMimeType?: string;
   role?: MediaRole;
   createdAt?: string;
 };
@@ -280,6 +291,12 @@ export class WebLineupStorage implements LineupStoragePort {
             mimeType: media.mimeType,
             blob: media.blob,
             url: URL.createObjectURL(media.blob),
+            thumbnailBlob: media.thumbnailBlob,
+            thumbnailUrl: media.thumbnailBlob ? URL.createObjectURL(media.thumbnailBlob) : undefined,
+            thumbnailMimeType: media.thumbnailMimeType,
+            previewBlob: media.previewBlob,
+            previewUrl: media.previewBlob ? URL.createObjectURL(media.previewBlob) : undefined,
+            previewMimeType: media.previewMimeType,
             role: media.role ?? 'detail',
             createdAt: media.createdAt,
             sourceLineupId: media.pointId,
@@ -360,6 +377,12 @@ export class WebLineupStorage implements LineupStoragePort {
         mimeType: media.mimeType,
         blob: media.blob,
         url: URL.createObjectURL(media.blob),
+        thumbnailBlob: media.thumbnailBlob,
+        thumbnailUrl: media.thumbnailBlob ? URL.createObjectURL(media.thumbnailBlob) : undefined,
+        thumbnailMimeType: media.thumbnailMimeType,
+        previewBlob: media.previewBlob,
+        previewUrl: media.previewBlob ? URL.createObjectURL(media.previewBlob) : undefined,
+        previewMimeType: media.previewMimeType,
         role: media.role ?? 'detail',
         createdAt: media.createdAt,
         sourceLineupId: media.pointId,
@@ -382,7 +405,15 @@ export class WebLineupStorage implements LineupStoragePort {
     const db = await this.openDb();
     const pointRecord: PointRecord = {
       ...point,
-      media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role: role ?? 'detail' })),
+      media: point.media.map(({
+        id,
+        name,
+        type,
+        mimeType,
+        role,
+        thumbnailMimeType,
+        previewMimeType,
+      }) => ({ id, name, type, mimeType, role: role ?? 'detail', thumbnailMimeType, previewMimeType })),
       trajectory: point.trajectory ?? { vertices: [] },
       resultSpotId: point.resultSpotId ?? point.id,
       createdAt: point.createdAt ?? new Date().toISOString(),
@@ -396,6 +427,10 @@ export class WebLineupStorage implements LineupStoragePort {
       type: media.type,
       mimeType: media.mimeType,
       blob: media.blob,
+      thumbnailBlob: media.thumbnailBlob,
+      thumbnailMimeType: media.thumbnailMimeType,
+      previewBlob: media.previewBlob,
+      previewMimeType: media.previewMimeType,
       role: media.role ?? 'detail',
       createdAt: media.createdAt ?? new Date().toISOString(),
     }));
@@ -427,7 +462,15 @@ export class WebLineupStorage implements LineupStoragePort {
     await this.transaction(db, [POINTS_STORE], 'readwrite', (transaction) => {
       transaction.objectStore(POINTS_STORE).put({
         ...point,
-        media: point.media.map(({ id, name, type, mimeType, role }) => ({ id, name, type, mimeType, role: role ?? 'detail' })),
+        media: point.media.map(({
+          id,
+          name,
+          type,
+          mimeType,
+          role,
+          thumbnailMimeType,
+          previewMimeType,
+        }) => ({ id, name, type, mimeType, role: role ?? 'detail', thumbnailMimeType, previewMimeType })),
         trajectory: point.trajectory ?? { vertices: [] },
         resultSpotId: point.resultSpotId ?? point.id,
         createdAt: point.createdAt ?? new Date().toISOString(),
@@ -535,6 +578,13 @@ export class WebLineupStorage implements LineupStoragePort {
         mimeType: media.mimeType,
         blob: media.blob,
         url: URL.createObjectURL(media.blob),
+        thumbnailBlob: media.thumbnailBlob,
+        thumbnailUrl: media.thumbnailBlob ? URL.createObjectURL(media.thumbnailBlob) : undefined,
+        thumbnailMimeType: media.thumbnailMimeType,
+        previewBlob: media.previewBlob,
+        previewUrl: media.previewBlob ? URL.createObjectURL(media.previewBlob) : undefined,
+        previewMimeType: media.previewMimeType,
+        assetOnly: true,
         role: 'detail' as const,
         createdAt: media.createdAt,
         sourceLineupId: media.pointId,
@@ -1180,8 +1230,9 @@ export class WebLineupStorage implements LineupStoragePort {
     });
   }
 
-  private contentMediaPath(point: StoredPoint, media: StoredMedia): string {
+  private contentMediaPath(point: StoredPoint, media: StoredMedia, variant?: 'thumb' | 'preview'): string {
     const role = media.role ?? 'detail';
+    const variantPrefix = variant ? `${variant}-` : '';
     return [
       'Content',
       'Maps',
@@ -1189,7 +1240,7 @@ export class WebLineupStorage implements LineupStoragePort {
       'User',
       'Media',
       '_Pool',
-      `${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
+      `${variantPrefix}${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
     ].join('/');
   }
 
@@ -1248,6 +1299,8 @@ type LineupRow = Omit<StoredPoint, 'media' | 'trajectory' | 'requirements'> & {
 
 type MediaRow = Omit<StoredMedia, 'blob' | 'url'> & {
   path: string;
+  thumbnailPath?: string;
+  previewPath?: string;
   sortOrder: number;
   createdAt?: string;
   sourceLineupId?: string;
@@ -1333,6 +1386,7 @@ class DesktopLineupStorage implements LineupStoragePort {
     const lineups = await db.select<LineupRow[]>('SELECT * FROM lineups ORDER BY id');
     const mediaRows = await db.select<(MediaRow & { lineupId: string })[]>(
       `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType, media_assets.path,
+        media_assets.thumbnailPath, media_assets.thumbnailMimeType, media_assets.previewPath, media_assets.previewMimeType,
         lineup_media.role, lineup_media.sortOrder, lineup_media.lineupId
       FROM lineup_media
       JOIN media_assets ON media_assets.id = lineup_media.mediaId
@@ -1362,6 +1416,12 @@ class DesktopLineupStorage implements LineupStoragePort {
       trajectory: this.parseJson<StoredTrajectory>(lineup.trajectoryJson, { vertices: [] }),
       media: await Promise.all((mediaByLineup.get(lineup.id) ?? []).map(async (media) => {
         const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+        const thumbnailBlob = media.thumbnailPath && media.thumbnailMimeType
+          ? await this.readBlob(workspace.rootDir, media.thumbnailPath, media.thumbnailMimeType)
+          : undefined;
+        const previewBlob = media.previewPath && media.previewMimeType
+          ? await this.readBlob(workspace.rootDir, media.previewPath, media.previewMimeType)
+          : undefined;
         return {
           id: media.id,
           name: media.name,
@@ -1369,6 +1429,12 @@ class DesktopLineupStorage implements LineupStoragePort {
           mimeType: media.mimeType,
           blob,
           url: URL.createObjectURL(blob),
+          thumbnailBlob,
+          thumbnailUrl: thumbnailBlob ? URL.createObjectURL(thumbnailBlob) : undefined,
+          thumbnailMimeType: media.thumbnailMimeType,
+          previewBlob,
+          previewUrl: previewBlob ? URL.createObjectURL(previewBlob) : undefined,
+          previewMimeType: media.previewMimeType,
           role: media.role ?? 'detail',
           createdAt: media.createdAt,
           sourceLineupId: media.lineupId,
@@ -1424,6 +1490,7 @@ class DesktopLineupStorage implements LineupStoragePort {
 
     const mediaRows = await db.select<Array<MediaRow & { lineupId: string }>>(
       `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType, media_assets.path,
+        media_assets.thumbnailPath, media_assets.thumbnailMimeType, media_assets.previewPath, media_assets.previewMimeType,
         media_assets.createdAt, lineup_media.role, lineup_media.sortOrder, lineup_media.lineupId
       FROM lineup_media
       JOIN media_assets ON media_assets.id = lineup_media.mediaId
@@ -1470,6 +1537,7 @@ class DesktopLineupStorage implements LineupStoragePort {
     const workspace = await this.workspace();
     const rows = await db.select<Array<MediaRow & { lineupId: string; sourceLineupTitle?: string }>>(
       `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType, media_assets.path,
+        media_assets.thumbnailPath, media_assets.thumbnailMimeType, media_assets.previewPath, media_assets.previewMimeType,
         media_assets.createdAt, lineup_media.role, lineup_media.sortOrder, lineup_media.lineupId,
         lineups.title AS sourceLineupTitle
       FROM lineup_media
@@ -1482,6 +1550,12 @@ class DesktopLineupStorage implements LineupStoragePort {
 
     return Promise.all(rows.map(async (media) => {
       const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+      const thumbnailBlob = media.thumbnailPath && media.thumbnailMimeType
+        ? await this.readBlob(workspace.rootDir, media.thumbnailPath, media.thumbnailMimeType)
+        : undefined;
+      const previewBlob = media.previewPath && media.previewMimeType
+        ? await this.readBlob(workspace.rootDir, media.previewPath, media.previewMimeType)
+        : undefined;
       return {
         id: media.id,
         name: media.name,
@@ -1489,6 +1563,12 @@ class DesktopLineupStorage implements LineupStoragePort {
         mimeType: media.mimeType,
         blob,
         url: URL.createObjectURL(blob),
+        thumbnailBlob,
+        thumbnailUrl: thumbnailBlob ? URL.createObjectURL(thumbnailBlob) : undefined,
+        thumbnailMimeType: media.thumbnailMimeType,
+        previewBlob,
+        previewUrl: previewBlob ? URL.createObjectURL(previewBlob) : undefined,
+        previewMimeType: media.previewMimeType,
         role: media.role ?? 'detail',
         createdAt: media.createdAt,
         sourceLineupId: media.lineupId,
@@ -1504,17 +1584,45 @@ class DesktopLineupStorage implements LineupStoragePort {
     await db.execute('DELETE FROM lineup_media WHERE lineupId = $1', [point.id]);
     await Promise.all(point.media.map(async (media, index) => {
       const path = this.contentMediaPath(point, media);
-      await this.writeBlob(workspace.rootDir, path, media.blob);
-      await db.execute(
-        `INSERT INTO media_assets (id, name, type, mimeType, path, checksum, createdAt)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
-        ON CONFLICT(id) DO UPDATE SET
-          name=excluded.name,
-          type=excluded.type,
-          mimeType=excluded.mimeType,
-          path=excluded.path`,
-        [media.id, media.name, media.type, media.mimeType, path, '', media.createdAt ?? new Date().toISOString()],
-      );
+      const thumbnailPath = media.thumbnailBlob ? this.contentMediaPath(point, media, 'thumb') : null;
+      const previewPath = media.previewBlob ? this.contentMediaPath(point, media, 'preview') : null;
+      if (!media.assetOnly) {
+        await this.writeBlob(workspace.rootDir, path, media.blob);
+        if (thumbnailPath && media.thumbnailBlob) {
+          await this.writeBlob(workspace.rootDir, thumbnailPath, media.thumbnailBlob);
+        }
+        if (previewPath && media.previewBlob) {
+          await this.writeBlob(workspace.rootDir, previewPath, media.previewBlob);
+        }
+        await db.execute(
+          `INSERT INTO media_assets (
+            id, name, type, mimeType, path, thumbnailPath, thumbnailMimeType, previewPath, previewMimeType, checksum, createdAt
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          ON CONFLICT(id) DO UPDATE SET
+            name=excluded.name,
+            type=excluded.type,
+            mimeType=excluded.mimeType,
+            path=excluded.path,
+            thumbnailPath=COALESCE(excluded.thumbnailPath, media_assets.thumbnailPath),
+            thumbnailMimeType=COALESCE(excluded.thumbnailMimeType, media_assets.thumbnailMimeType),
+            previewPath=COALESCE(excluded.previewPath, media_assets.previewPath),
+            previewMimeType=COALESCE(excluded.previewMimeType, media_assets.previewMimeType)`,
+          [
+            media.id,
+            media.name,
+            media.type,
+            media.mimeType,
+            path,
+            thumbnailPath,
+            media.thumbnailMimeType ?? null,
+            previewPath,
+            media.previewMimeType ?? null,
+            '',
+            media.createdAt ?? new Date().toISOString(),
+          ],
+        );
+      }
       await db.execute(
         `INSERT INTO lineup_media (lineupId, mediaId, role, sortOrder)
         VALUES ($1,$2,$3,$4)
@@ -1709,7 +1817,9 @@ class DesktopLineupStorage implements LineupStoragePort {
     const workspace = await this.workspace();
     const rows = await db.select<Array<MediaRow & { sourceLineupTitle?: string }>>(
       `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType,
-        media_assets.path, media_assets.createdAt, lineup_media.lineupId AS sourceLineupId,
+        media_assets.path, media_assets.thumbnailPath, media_assets.thumbnailMimeType,
+        media_assets.previewPath, media_assets.previewMimeType,
+        media_assets.createdAt, lineup_media.lineupId AS sourceLineupId,
         lineups.title AS sourceLineupTitle, 'detail' AS role, 0 AS sortOrder
       FROM media_assets
       LEFT JOIN lineup_media ON lineup_media.mediaId = media_assets.id
@@ -1719,7 +1829,13 @@ class DesktopLineupStorage implements LineupStoragePort {
     );
 
     return Promise.all(rows.map(async (media) => {
-      const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+      const thumbnailBlob = media.thumbnailPath && media.thumbnailMimeType
+        ? await this.readBlob(workspace.rootDir, media.thumbnailPath, media.thumbnailMimeType)
+        : undefined;
+      const previewBlob = media.previewPath && media.previewMimeType
+        ? await this.readBlob(workspace.rootDir, media.previewPath, media.previewMimeType)
+        : undefined;
+      const blob = thumbnailBlob ?? previewBlob ?? await this.readBlob(workspace.rootDir, media.path, media.mimeType);
       return {
         id: media.id,
         name: media.name,
@@ -1727,6 +1843,13 @@ class DesktopLineupStorage implements LineupStoragePort {
         mimeType: media.mimeType,
         blob,
         url: URL.createObjectURL(blob),
+        thumbnailBlob,
+        thumbnailUrl: thumbnailBlob ? URL.createObjectURL(thumbnailBlob) : undefined,
+        thumbnailMimeType: media.thumbnailMimeType,
+        previewBlob,
+        previewUrl: previewBlob ? URL.createObjectURL(previewBlob) : undefined,
+        previewMimeType: media.previewMimeType,
+        assetOnly: true,
         role: 'detail',
         createdAt: media.createdAt,
         sourceLineupId: media.sourceLineupId,
@@ -1740,16 +1863,42 @@ class DesktopLineupStorage implements LineupStoragePort {
     const workspace = await this.workspace([mapId]);
     const mediaAsset = { ...media, role: 'detail' as const, createdAt: media.createdAt ?? new Date().toISOString() };
     const path = this.contentMediaPath({ mapId } as StoredPoint, mediaAsset);
+    const thumbnailPath = mediaAsset.thumbnailBlob ? this.contentMediaPath({ mapId } as StoredPoint, mediaAsset, 'thumb') : null;
+    const previewPath = mediaAsset.previewBlob ? this.contentMediaPath({ mapId } as StoredPoint, mediaAsset, 'preview') : null;
     await this.writeBlob(workspace.rootDir, path, mediaAsset.blob);
+    if (thumbnailPath && mediaAsset.thumbnailBlob) {
+      await this.writeBlob(workspace.rootDir, thumbnailPath, mediaAsset.thumbnailBlob);
+    }
+    if (previewPath && mediaAsset.previewBlob) {
+      await this.writeBlob(workspace.rootDir, previewPath, mediaAsset.previewBlob);
+    }
     await db.execute(
-      `INSERT INTO media_assets (id, name, type, mimeType, path, checksum, createdAt)
-      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO media_assets (
+        id, name, type, mimeType, path, thumbnailPath, thumbnailMimeType, previewPath, previewMimeType, checksum, createdAt
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name,
         type=excluded.type,
         mimeType=excluded.mimeType,
-        path=excluded.path`,
-      [mediaAsset.id, mediaAsset.name, mediaAsset.type, mediaAsset.mimeType, path, '', mediaAsset.createdAt],
+        path=excluded.path,
+        thumbnailPath=COALESCE(excluded.thumbnailPath, media_assets.thumbnailPath),
+        thumbnailMimeType=COALESCE(excluded.thumbnailMimeType, media_assets.thumbnailMimeType),
+        previewPath=COALESCE(excluded.previewPath, media_assets.previewPath),
+        previewMimeType=COALESCE(excluded.previewMimeType, media_assets.previewMimeType)`,
+      [
+        mediaAsset.id,
+        mediaAsset.name,
+        mediaAsset.type,
+        mediaAsset.mimeType,
+        path,
+        thumbnailPath,
+        mediaAsset.thumbnailMimeType ?? null,
+        previewPath,
+        mediaAsset.previewMimeType ?? null,
+        '',
+        mediaAsset.createdAt,
+      ],
     );
     return mediaAsset;
   }
@@ -1907,9 +2056,17 @@ class DesktopLineupStorage implements LineupStoragePort {
       type TEXT NOT NULL,
       mimeType TEXT NOT NULL,
       path TEXT NOT NULL,
+      thumbnailPath TEXT,
+      thumbnailMimeType TEXT,
+      previewPath TEXT,
+      previewMimeType TEXT,
       checksum TEXT,
       createdAt TEXT NOT NULL
     )`);
+    await this.addColumnIfMissing(db, 'media_assets', 'thumbnailPath TEXT');
+    await this.addColumnIfMissing(db, 'media_assets', 'thumbnailMimeType TEXT');
+    await this.addColumnIfMissing(db, 'media_assets', 'previewPath TEXT');
+    await this.addColumnIfMissing(db, 'media_assets', 'previewMimeType TEXT');
     await db.execute(`CREATE TABLE IF NOT EXISTS lineup_media (
       lineupId TEXT NOT NULL,
       mediaId TEXT NOT NULL,
@@ -1948,7 +2105,7 @@ class DesktopLineupStorage implements LineupStoragePort {
     await db.execute(
       `INSERT INTO app_meta (key, value) VALUES ($1, $2)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-      ['schemaVersion', '3'],
+      ['schemaVersion', '4'],
     );
   }
 
@@ -2154,8 +2311,9 @@ class DesktopLineupStorage implements LineupStoragePort {
     });
   }
 
-  private contentMediaPath(point: StoredPoint, media: StoredMedia): string {
+  private contentMediaPath(point: StoredPoint, media: StoredMedia, variant?: 'thumb' | 'preview'): string {
     const role = media.role ?? 'detail';
+    const variantPrefix = variant ? `${variant}-` : '';
     return [
       'Content',
       'Maps',
@@ -2163,7 +2321,7 @@ class DesktopLineupStorage implements LineupStoragePort {
       'User',
       'Media',
       '_Pool',
-      `${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
+      `${variantPrefix}${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
     ].join('/');
   }
 }

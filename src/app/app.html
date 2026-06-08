@@ -686,7 +686,7 @@
                       <span class="lineup-choice-preview" [class.is-empty]="!guideSlotMedia(lineup, 'start')">
                         @if (guideSlotMedia(lineup, 'start'); as media) {
                           @if (media.type === 'image') {
-                            <img [src]="media.url" [alt]="media.name" />
+                            <img [src]="mediaThumbnailUrl(media)" [alt]="media.name" />
                           } @else {
                             <video [src]="media.url" muted></video>
                           }
@@ -758,7 +758,7 @@
                         <span class="lineup-choice-preview" [class.is-empty]="!guideSlotMedia(lineup, 'start')">
                           @if (guideSlotMedia(lineup, 'start'); as media) {
                             @if (media.type === 'image') {
-                              <img [src]="media.url" [alt]="media.name" />
+                              <img [src]="mediaThumbnailUrl(media)" [alt]="media.name" />
                             } @else {
                               <video [src]="media.url" muted></video>
                             }
@@ -863,7 +863,7 @@
                       <span class="skeleton-block" aria-hidden="true"></span>
                     } @else if (guideSlotMedia(variant, 'start'); as media) {
                       @if (media.type === 'image') {
-                        <img [src]="media.url" [alt]="media.name" />
+                        <img [src]="mediaThumbnailUrl(media)" [alt]="media.name" />
                       } @else {
                         <video [src]="media.url" muted></video>
                       }
@@ -932,7 +932,7 @@
                 <span class="guide-slot-skeleton skeleton-block" aria-hidden="true"></span>
               } @else if (selectedPointStartMedia(); as media) {
                 @if (media.type === 'image') {
-                  <img [src]="media.url" [alt]="media.name" />
+                  <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
                 } @else {
                   <video [src]="media.url" muted></video>
                 }
@@ -976,7 +976,7 @@
                 <span class="guide-slot-skeleton skeleton-block" aria-hidden="true"></span>
               } @else if (selectedPointResultMedia(); as media) {
                 @if (media.type === 'image') {
-                  <img [src]="media.url" [alt]="media.name" />
+                  <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
                 } @else {
                   <video [src]="media.url" muted></video>
                 }
@@ -1086,7 +1086,7 @@
                 >
                   <small>Start</small>
                   @if (selectedPointStartMedia(); as media) {
-                    <img [src]="media.url" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
                   } @else {
                     <span>Drop image</span>
                   }
@@ -1102,7 +1102,7 @@
                 >
                   <small>Result</small>
                   @if (selectedPointResultMedia(); as media) {
-                    <img [src]="media.url" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
                   } @else {
                     <span>Drop image</span>
                   }
@@ -1129,7 +1129,7 @@
                       (contextmenu)="openMediaContextMenu(media, $event)"
                     >
                       @if (media.type === 'image') {
-                        <img [src]="media.url" [alt]="media.name" />
+                        <img [src]="mediaThumbnailUrl(media)" [alt]="media.name" />
                       } @else {
                         <video [src]="media.url" muted></video>
                       }
@@ -1337,7 +1337,7 @@
         @for (media of mediaPoolItems(); track media.id) {
           <button type="button" class="media-pool-item" (click)="attachMediaFromPool(media, $event)">
             @if (media.type === 'image') {
-              <img [src]="media.url" [alt]="media.name" />
+              <img [src]="mediaThumbnailUrl(media)" [alt]="media.name" />
             } @else {
               <video [src]="media.url" muted></video>
             }
@@ -1383,7 +1383,7 @@
     >
       @if (media.type === 'image') {
         <img
-          [src]="media.url"
+          [src]="mediaOriginalUrl(media)"
           [alt]="media.name"
           [style.transform]="'translate(' + previewPan().x + 'px, ' + previewPan().y + 'px) scale(' + previewZoom() + ')'"
         />

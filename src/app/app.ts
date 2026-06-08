@@ -293,6 +293,10 @@ const POINT_ACTION_MENU_WIDTH = 200;
 const POINT_ACTION_MENU_HEIGHT = 216;
 const POINT_ACTION_MENU_GAP = 10;
 const POINT_ACTION_MENU_EDGE_PADDING = 8;
+const MEDIA_THUMB_MAX_SIZE = 320;
+const MEDIA_PREVIEW_MAX_SIZE = 960;
+const MEDIA_THUMB_QUALITY = 0.68;
+const MEDIA_PREVIEW_QUALITY = 0.78;
 const SHOW_MENU_SCROLLBAR_STORAGE_KEY = 'cs2nades:show-menu-scrollbar';
 const USER_SETTINGS_STORAGE_KEY = 'cs2nades:user-settings';
 const FULL_RAIL_REQUIRED_WIDTH = 620;
@@ -2495,18 +2499,16 @@ export class App {
 
     const now = new Date().toISOString();
     if (result.mode === 'copy') {
-      const copiedMedia: PointMedia = {
+      const copiedMedia = await this.createPointMediaFromBlob({
         id: `${point.id}:media:${Date.now()}:${result.name}`,
         name: result.name,
-        type: 'image',
         mimeType: result.mimeType,
         blob: result.blob,
-        url: URL.createObjectURL(result.blob),
         role: 'detail',
         createdAt: now,
         sourceLineupId: point.id,
         sourceLineupTitle: this.displayTitle(point),
-      };
+      });
       const storedMedia = await this.storage.addMediaAsset(copiedMedia, point.mapId);
       const currentMedia = point.media ?? [];
       const nextMedia = this.sortRoleMedia([...currentMedia, storedMedia]);
@@ -2520,17 +2522,31 @@ export class App {
       return;
     }
 
-    const replacementMedia: PointMedia = {
+    const replacementMedia = await this.createPointMediaFromBlob({
+      id: source.id,
+      name: result.name,
+      mimeType: result.mimeType,
+      blob: result.blob,
+      role: source.role ?? 'detail',
+      createdAt: source.createdAt ?? now,
+      sourceLineupId: source.sourceLineupId ?? point.id,
+      sourceLineupTitle: source.sourceLineupTitle ?? this.displayTitle(point),
+    });
+    const replacementWithRole: PointMedia = {
+      ...replacementMedia,
       ...source,
       name: result.name,
       mimeType: result.mimeType,
       blob: result.blob,
       url: URL.createObjectURL(result.blob),
-      createdAt: source.createdAt ?? now,
-      sourceLineupId: source.sourceLineupId ?? point.id,
-      sourceLineupTitle: source.sourceLineupTitle ?? this.displayTitle(point),
+      thumbnailBlob: replacementMedia.thumbnailBlob,
+      thumbnailUrl: replacementMedia.thumbnailUrl,
+      thumbnailMimeType: replacementMedia.thumbnailMimeType,
+      previewBlob: replacementMedia.previewBlob,
+      previewUrl: replacementMedia.previewUrl,
+      previewMimeType: replacementMedia.previewMimeType,
     };
-    const storedMedia = await this.storage.addMediaAsset(replacementMedia, point.mapId);
+    const storedMedia = await this.storage.addMediaAsset(replacementWithRole, point.mapId);
     const nextMedia = (point.media ?? []).map((media) => (
       media.id === source.id ? { ...storedMedia, role: source.role ?? storedMedia.role ?? 'detail' } : media
     ));
@@ -2944,6 +2960,18 @@ export class App {
     return this.mediaForRole(point, role);
   }
 
+  protected mediaThumbnailUrl(media: PointMedia): string {
+    return media.thumbnailUrl || media.previewUrl || media.url;
+  }
+
+  protected mediaPreviewUrl(media: PointMedia): string {
+    return media.previewUrl || media.thumbnailUrl || media.url;
+  }
+
+  protected mediaOriginalUrl(media: PointMedia): string {
+    return media.url || media.previewUrl || media.thumbnailUrl || '';
+  }
+
   protected trajectorySvgPoints(): string {
     return this.trajectorySvgPointList();
   }
@@ -3227,7 +3255,6 @@ export class App {
   protected onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Escape' && this.imageEditorMedia()) {
       event.preventDefault();
-      this.closeImageEditor();
       return;
     }
 
@@ -3849,20 +3876,17 @@ export class App {
       return;
     }
 
-    const media = Array.from(files)
+    const media = await Promise.all(Array.from(files)
       .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
-      .map((file) => ({
-        id: `${point.id}:media:${Date.now()}:${file.name}`,
-        name: file.name,
-        type: file.type.startsWith('video/') ? 'video' as const : 'image' as const,
-        mimeType: file.type,
+      .map((file) => this.createPointMediaFromBlob({
         blob: file,
-        url: URL.createObjectURL(file),
-        role: 'detail' as const,
-        createdAt: new Date().toISOString(),
+        name: file.name,
+        mimeType: file.type,
+        id: `${point.id}:media:${Date.now()}:${file.name}`,
+        role: 'detail',
         sourceLineupId: point.id,
         sourceLineupTitle: this.displayTitle(point),
-      }));
+      })));
 
     if (media.length === 0) {
       return;
@@ -3885,6 +3909,112 @@ export class App {
     storedMedia.forEach((item, index) => {
       void this.storage.attachMediaToLineup(point.id, item, 'detail', currentMedia.length + index);
     });
+  }
+
+  private async createPointMediaFromBlob(options: {
+    blob: Blob;
+    name: string;
+    mimeType: string;
+    id: string;
+    role: 'detail' | 'start' | 'result';
+    sourceLineupId: string;
+    sourceLineupTitle: string;
+    createdAt?: string;
+  }): Promise<PointMedia> {
+    const media: PointMedia = {
+      id: options.id,
+      name: options.name,
+      type: options.mimeType.startsWith('video/') ? 'video' : 'image',
+      mimeType: options.mimeType,
+      blob: options.blob,
+      url: URL.createObjectURL(options.blob),
+      role: options.role,
+      createdAt: options.createdAt ?? new Date().toISOString(),
+      sourceLineupId: options.sourceLineupId,
+      sourceLineupTitle: options.sourceLineupTitle,
+    };
+
+    if (media.type !== 'image') {
+      return media;
+    }
+
+    try {
+      const [thumbnail, preview] = await Promise.all([
+        this.createImageVariant(options.blob, MEDIA_THUMB_MAX_SIZE, MEDIA_THUMB_QUALITY),
+        this.createImageVariant(options.blob, MEDIA_PREVIEW_MAX_SIZE, MEDIA_PREVIEW_QUALITY),
+      ]);
+      return {
+        ...media,
+        thumbnailBlob: thumbnail.blob,
+        thumbnailUrl: URL.createObjectURL(thumbnail.blob),
+        thumbnailMimeType: thumbnail.mimeType,
+        previewBlob: preview.blob,
+        previewUrl: URL.createObjectURL(preview.blob),
+        previewMimeType: preview.mimeType,
+      };
+    } catch {
+      return media;
+    }
+  }
+
+  private async createImageVariant(
+    blob: Blob,
+    maxSize: number,
+    quality: number,
+  ): Promise<{ blob: Blob; mimeType: string }> {
+    if (
+      typeof HTMLImageElement !== 'undefined' &&
+      !('decode' in HTMLImageElement.prototype) &&
+      !('createImageBitmap' in globalThis)
+    ) {
+      throw new Error('Image variant decode is unavailable');
+    }
+
+    const sourceUrl = URL.createObjectURL(blob);
+    try {
+      const image = new Image();
+      image.decoding = 'async';
+      const loaded = new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error('Image variant decode failed'));
+      });
+      image.src = sourceUrl;
+      await Promise.race([
+        loaded,
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('Image variant decode timed out')), 80);
+        }),
+      ]);
+
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) {
+        throw new Error('Canvas is unavailable');
+      }
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
+      context.drawImage(image, 0, 0, width, height);
+
+      const mimeType = 'image/webp';
+      const variantBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, quality));
+      if (variantBlob) {
+        return { blob: variantBlob, mimeType };
+      }
+
+      const fallbackMimeType = 'image/jpeg';
+      const fallbackBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, fallbackMimeType, quality));
+      if (!fallbackBlob) {
+        throw new Error('Image variant encode failed');
+      }
+      return { blob: fallbackBlob, mimeType: fallbackMimeType };
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
   }
 
   private sortRoleMedia(media: PointMedia[]): PointMedia[] {

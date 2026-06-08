@@ -1674,6 +1674,28 @@ describe('App', () => {
     expect(Array.from(compiled.querySelectorAll('.media-context-menu button')).map((button) => button.textContent?.trim())).not.toContain('Edit');
   });
 
+  it('should not close the image editor from global Escape', async () => {
+    const fixture = TestBed.createComponent(App);
+    await createLineup(fixture);
+    const app = fixture.componentInstance as any;
+    const media = {
+      id: 'image',
+      name: 'image.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: new Blob(['image'], { type: 'image/png' }),
+      url: 'blob:image',
+      role: 'detail' as const,
+    };
+
+    app.updateSelectedPoint({ media: [media] });
+    app.imageEditorMediaId.set(media.id);
+
+    app.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(app.imageEditorMedia()?.id).toBe('image');
+  });
+
   it('should save edited images as a new copy without changing the original', async () => {
     stubObjectUrls();
     const fixture = TestBed.createComponent(App);
@@ -1691,6 +1713,11 @@ describe('App', () => {
     };
     const attached: Array<{ mediaId: string; role: string }> = [];
 
+    app.createPointMediaFromBlob = async (asset: any) => ({
+      ...asset,
+      type: 'image',
+      url: URL.createObjectURL(asset.blob),
+    });
     app.storage.addMediaAsset = async (asset: unknown) => asset;
     app.storage.attachMediaToLineup = async (_lineupId: string, asset: { id: string }, role: string) => {
       attached.push({ mediaId: asset.id, role });
@@ -1729,6 +1756,11 @@ describe('App', () => {
       role: 'result' as const,
     };
 
+    app.createPointMediaFromBlob = async (asset: any) => ({
+      ...asset,
+      type: 'image',
+      url: URL.createObjectURL(asset.blob),
+    });
     app.storage.addMediaAsset = async (asset: unknown) => asset;
     app.storage.attachMediaToLineup = async () => undefined;
     app.updateSelectedPoint({ media: [media] });

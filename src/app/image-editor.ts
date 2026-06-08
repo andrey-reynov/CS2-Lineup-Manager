@@ -691,6 +691,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
   protected onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Escape' && this.isTextEditingTarget(event.target)) {
       event.preventDefault();
+      event.stopImmediatePropagation();
       (event.target as HTMLElement).blur();
       return;
     }
@@ -733,6 +734,7 @@ export class ImageEditorComponent implements AfterViewInit, OnChanges, OnDestroy
 
     if (event.key === 'Escape') {
       event.preventDefault();
+      event.stopImmediatePropagation();
       this.saveChoicesOpen = false;
       this.colorPickerOpen = false;
       if (this.selectedAnnotationId && this.selectedAnnotationId === this.freshAnnotationId) {
