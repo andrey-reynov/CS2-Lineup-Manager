@@ -811,7 +811,7 @@ export class App {
   });
 
   protected readonly lineupVisibilityTip = computed(() => (
-    this.lineupsHidden() ? 'Lineups hidden - H to show' : 'Lineups visible - H to hide'
+    this.lineupsHidden() ? 'Press H to show lineups' : 'Press H to hide lineups'
   ));
 
   protected readonly selectedPoint = computed(() => {

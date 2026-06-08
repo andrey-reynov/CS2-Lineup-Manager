@@ -1508,8 +1508,8 @@ h2 {
 .lineup-visibility-tip {
   position: absolute;
   left: 50%;
-  bottom: 82px;
-  z-index: 7;
+  bottom: 104px;
+  z-index: 8;
   padding: 5px 9px;
   color: var(--vscode-text-muted);
   font-size: 0.72rem;
@@ -1523,6 +1523,10 @@ h2 {
   box-shadow: 0 10px 28px var(--vscode-shadow);
   transform: translateX(-50%);
   backdrop-filter: blur(14px);
+}
+
+.lineup-visibility-tip.is-compact {
+  bottom: 82px;
 }
 
 .playlist-filter,

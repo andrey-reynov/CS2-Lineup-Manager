@@ -360,7 +360,7 @@
               </div>
             }
 
-            <div class="lineup-visibility-tip" aria-live="polite">
+            <div class="lineup-visibility-tip" [class.is-compact]="isRailCompact()" aria-live="polite">
               {{ lineupVisibilityTip() }}
             </div>
 
