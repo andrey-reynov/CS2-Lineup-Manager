@@ -1,4 +1,4 @@
-<main class="app-shell" [class.is-sidebar-closed]="!sidebarOpen()">
+<main class="app-shell" [class.is-sidebar-closed]="!sidebarOpen()" [class.show-scrollbar]="showMenuScrollbar()">
   @if (!sidebarOpen()) {
     <button class="sidebar-open-button" type="button" aria-label="Open navigation menu" (click)="openSidebar()">
       <span class="ui-icon" style="--icon-url: url('/icons/window-sidebar_outline.svg')" aria-hidden="true"></span>
@@ -23,7 +23,7 @@
         <span>{{ maps().length }}</span>
       </div>
 
-      <div class="map-buttons" [class.show-scrollbar]="showMenuScrollbar()">
+      <div class="map-buttons">
         @for (map of maps(); track map.id) {
           <button
             class="map-button"
@@ -105,8 +105,8 @@
           <section class="settings-card" aria-label="Interface preferences">
             <label class="settings-toggle">
               <span>
-                <strong>Show menu scrollbar</strong>
-                <small>Reveal the scroll thumb in the maps list.</small>
+                <strong>Show scrollbar</strong>
+                <small>Reveal scrollbars in scrollable panels.</small>
               </span>
               <input
                 type="checkbox"
@@ -209,21 +209,31 @@
                 <span>Content folder</span>
                 <strong>{{ desktopContentRoot() || 'Default AppData folder' }}</strong>
               </div>
-              <button type="button" class="settings-path-button ui-button" (click)="chooseDesktopContentRoot()">
+              <button
+                type="button"
+                class="settings-path-button ui-button"
+                [disabled]="dataActionLocked()"
+                (click)="chooseDesktopContentRoot()"
+              >
                 Choose
               </button>
             </div>
             <div class="settings-action-row">
-              <button type="button" class="settings-action ui-button" (click)="importZip()">
+              <button type="button" class="settings-action ui-button" [disabled]="dataActionLocked()" (click)="importZip()">
                 <span class="ui-icon" style="--icon-url: url('/icons/upload_outline.svg')" aria-hidden="true"></span>
                 Import ZIP
               </button>
-              <button type="button" class="settings-action ui-button" [disabled]="exportStatus()" (click)="exportZip()">
+              <button type="button" class="settings-action ui-button" [disabled]="dataActionLocked()" (click)="exportZip()">
                 <span class="ui-icon" style="--icon-url: url('/icons/download_outline.svg')" aria-hidden="true"></span>
-                {{ exportStatus() || 'Export ZIP' }}
+                Export ZIP
               </button>
               @if (showLegacyMigration()) {
-                <button type="button" class="settings-action ui-button" (click)="migrateLegacyDataFromSettings()">
+                <button
+                  type="button"
+                  class="settings-action ui-button"
+                  [disabled]="dataActionLocked()"
+                  (click)="migrateLegacyDataFromSettings()"
+                >
                   <span class="ui-icon" style="--icon-url: url('/icons/upload_outline.svg')" aria-hidden="true"></span>
                   Migrate Legacy Data
                 </button>
@@ -234,10 +244,15 @@
             <p class="settings-error">{{ importError() }}</p>
           }
           @if (exportStatus()) {
-            <p class="settings-status">{{ exportStatus() }}</p>
+            <section class="settings-process" aria-live="polite" aria-label="Export progress">
+              <span class="settings-spinner" aria-hidden="true"></span>
+              <strong>Exporting your media...</strong>
+              <div class="settings-progress">
+                <span [style.width.%]="exportProgress()"></span>
+              </div>
+            </section>
           }
 
-          <p class="settings-category">Media maintenance</p>
           <section class="settings-card" aria-label="Media optimization">
             <div class="settings-path-row">
               <div class="settings-path-copy">
@@ -247,15 +262,20 @@
               <button
                 type="button"
                 class="settings-path-button ui-button"
-                [disabled]="mediaOptimization().status === 'scanning' || mediaOptimization().status === 'running'"
+                [disabled]="dataActionLocked()"
                 (click)="optimizeMediaLibrary()"
               >
-                {{ mediaOptimization().status === 'running' || mediaOptimization().status === 'scanning' ? 'Optimizing' : 'Optimize' }}
+                {{ isMediaOptimizationBusy() ? 'Optimizing' : 'Optimize' }}
               </button>
             </div>
-            <div class="settings-progress" aria-label="Media optimization progress">
-              <span [style.width.%]="mediaOptimizationPercent()"></span>
-            </div>
+            @if (isMediaOptimizationBusy()) {
+              <div class="settings-progress" aria-label="Media optimization progress">
+                <span [style.width.%]="mediaOptimizationPercent()"></span>
+              </div>
+            }
+            @if (mediaOptimization().status === 'done' && mediaOptimizationSizeText()) {
+              <small class="settings-muted">{{ mediaOptimizationSizeText() }}</small>
+            }
             <small class="settings-muted">
               Builds thumb and preview files for old images. Originals stay untouched for fullscreen preview and export.
             </small>
@@ -290,16 +310,40 @@
               </div>
 
               <div class="map-overlay-layer">
-                @if (selectedPoint(); as selected) {
-                  @if (selectedTrajectoryPoints().length > 1) {
-                    <svg class="trajectory-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                @for (lineup of displayedTrajectoryLineups(); track lineup.id) {
+                  @if (trajectoryDisplayPointCount(lineup) > 1) {
+                    <svg
+                      class="trajectory-layer"
+                      [class.is-muted]="lineup.id !== selectedPoint()?.id"
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
                       <g [attr.transform]="trajectorySvgTransform()">
-                        <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPoints()"></polyline>
-                        <polyline class="trajectory-line" [attr.points]="trajectorySvgPoints()"></polyline>
+                        <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPointsFor(lineup)"></polyline>
+                        <polyline class="trajectory-line" [attr.points]="trajectorySvgPointsFor(lineup)"></polyline>
                       </g>
                     </svg>
 
-                    @if (selectedPointMode() === 'edit') {
+                    @if (selectedPointMode() === 'view') {
+                      @if (trajectoryStartPointFor(lineup); as start) {
+                        <button
+                          class="trajectory-vertex is-start is-lineup-selector"
+                          type="button"
+                          [class.is-selected]="lineup.id === selectedPoint()?.id"
+                          [style.left]="mapOverlayLeft(start)"
+                          [style.top]="mapOverlayTop(start)"
+                          [attr.aria-label]="'Select ' + displayTitle(lineup)"
+                          (click)="selectLineupFromStartPoint(lineup, $event)"
+                        ></button>
+                      }
+                    }
+                  }
+                }
+
+                @if (selectedPointMode() === 'edit') {
+                  @if (selectedPoint(); as selected) {
+                    @if (selectedTrajectoryPoints().length > 1) {
                       @for (midpoint of trajectorySegmentMidpoints(); track midpoint.id) {
                         <button
                           class="trajectory-midpoint"
@@ -313,22 +357,22 @@
                           (pointerdown)="startTrajectorySegmentDrag(midpoint.index, $event)"
                         ></button>
                       }
-                    }
 
-                    @for (vertex of selected.trajectory?.vertices ?? []; track vertex.id; let isLast = $last) {
-                      <button
-                        class="trajectory-vertex"
-                        type="button"
-                        [class.is-start]="isLast"
-                        [class.is-selected]="isTrajectoryVertexSelected(vertex.id)"
-                        [class.is-dragging]="isDraggingTrajectoryVertex(vertex.id)"
-                        [style.left]="mapOverlayLeft(vertex)"
-                        [style.top]="mapOverlayTop(vertex)"
-                        [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
-                        (pointerdown)="startTrajectoryVertexDrag(vertex.id, $event)"
-                        (click)="appendTrajectoryFromVertex(vertex.id, $event)"
-                        (contextmenu)="openTrajectoryVertexContextMenu(vertex.id, isLast, $event)"
-                      ></button>
+                      @for (vertex of selected.trajectory?.vertices ?? []; track vertex.id; let isLast = $last) {
+                        <button
+                          class="trajectory-vertex"
+                          type="button"
+                          [class.is-start]="isLast"
+                          [class.is-selected]="isTrajectoryVertexSelected(vertex.id)"
+                          [class.is-dragging]="isDraggingTrajectoryVertex(vertex.id)"
+                          [style.left]="mapOverlayLeft(vertex)"
+                          [style.top]="mapOverlayTop(vertex)"
+                          [attr.aria-label]="isLast ? 'Start point' : 'Trajectory bend point'"
+                          (pointerdown)="startTrajectoryVertexDrag(vertex.id, $event)"
+                          (click)="appendTrajectoryFromVertex(vertex.id, $event)"
+                          (contextmenu)="openTrajectoryVertexContextMenu(vertex.id, isLast, $event)"
+                        ></button>
+                      }
                     }
                   }
                 }
@@ -941,73 +985,65 @@
               </button>
             </div>
 
-            <button
-              class="guide-slot"
-              type="button"
-              [class.is-empty]="point.mediaLoaded && !selectedPointStartMedia()"
-              [class.is-loading]="!point.mediaLoaded"
-              (dragover)="onGuideRoleDragOver($event)"
-              (drop)="onGuideRoleDrop('start', $event)"
-              (click)="selectedPointStartMedia() && openMediaPreview(selectedPointStartMedia()!)"
-              (mousemove)="updateGuidePreviewFocus($event)"
-            >
-              <small>Start</small>
-              @if (!point.mediaLoaded) {
-                <span class="guide-slot-skeleton skeleton-block" aria-hidden="true"></span>
-              } @else if (selectedPointStartMedia(); as media) {
-                @if (media.type === 'image') {
-                  <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
-                } @else {
-                  <video [src]="media.url" muted></video>
-                }
-              } @else {
-                <span>No start screenshot</span>
+            @if (!point.mediaLoaded) {
+              @for (label of ['Stand', 'Aim', 'Result']; track label) {
+                <button class="guide-slot is-loading" type="button">
+                  <small>{{ label }}</small>
+                  <span class="guide-slot-skeleton skeleton-block" aria-hidden="true"></span>
+                </button>
               }
-              @if (point.mediaLoaded && point.detailsLoaded) {
-                <div class="guide-throw-overlay">
-                  <em>{{ selectedPointMovementText() || 'None' }}</em>
-                  @if (selectedPointMouseRequirement(); as mouseRequirement) {
-                    <strong>
-                      <span
-                        class="mouse-icon"
-                        [class.is-left]="mouseRequirement.mouseButtons === 'left'"
-                        [class.is-right]="mouseRequirement.mouseButtons === 'right'"
-                        [class.is-both]="mouseRequirement.mouseButtons === 'both'"
-                        aria-hidden="true"
-                      >
-                        <span></span>
-                        <span></span>
-                      </span>
-                      {{ mouseRequirement.label }}
-                    </strong>
+            } @else {
+              @if (selectedPointStartMedia(); as media) {
+                <button class="guide-slot" type="button" (click)="openMediaPreview(media)" (mousemove)="updateGuidePreviewFocus($event)">
+                  <small>Stand</small>
+                  @if (media.type === 'image') {
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                  } @else {
+                    <video [src]="media.url" muted></video>
                   }
-                </div>
+                  @if (point.detailsLoaded) {
+                    <div class="guide-throw-overlay">
+                      <em>{{ selectedPointMovementText() || 'None' }}</em>
+                      @if (selectedPointMouseRequirement(); as mouseRequirement) {
+                        <strong>
+                          <span
+                            class="mouse-icon"
+                            [class.is-left]="mouseRequirement.mouseButtons === 'left'"
+                            [class.is-right]="mouseRequirement.mouseButtons === 'right'"
+                            [class.is-both]="mouseRequirement.mouseButtons === 'both'"
+                            aria-hidden="true"
+                          >
+                            <span></span>
+                            <span></span>
+                          </span>
+                          {{ mouseRequirement.label }}
+                        </strong>
+                      }
+                    </div>
+                  }
+                </button>
               }
-            </button>
-
-            <button
-              class="guide-slot"
-              type="button"
-              [class.is-empty]="point.mediaLoaded && !selectedPointResultMedia()"
-              [class.is-loading]="!point.mediaLoaded"
-              (dragover)="onGuideRoleDragOver($event)"
-              (drop)="onGuideRoleDrop('result', $event)"
-              (click)="selectedPointResultMedia() && openMediaPreview(selectedPointResultMedia()!)"
-              (mousemove)="updateGuidePreviewFocus($event)"
-            >
-              <small>Result</small>
-              @if (!point.mediaLoaded) {
-                <span class="guide-slot-skeleton skeleton-block" aria-hidden="true"></span>
-              } @else if (selectedPointResultMedia(); as media) {
-                @if (media.type === 'image') {
-                  <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
-                } @else {
-                  <video [src]="media.url" muted></video>
-                }
-              } @else {
-                <span>No result screenshot</span>
+              @if (selectedPointAimMedia(); as media) {
+                <button class="guide-slot" type="button" (click)="openMediaPreview(media)" (mousemove)="updateGuidePreviewFocus($event)">
+                  <small>Aim</small>
+                  @if (media.type === 'image') {
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                  } @else {
+                    <video [src]="media.url" muted></video>
+                  }
+                </button>
               }
-            </button>
+              @if (selectedPointResultMedia(); as media) {
+                <button class="guide-slot" type="button" (click)="openMediaPreview(media)" (mousemove)="updateGuidePreviewFocus($event)">
+                  <small>Result</small>
+                  @if (media.type === 'image') {
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                  } @else {
+                    <video [src]="media.url" muted></video>
+                  }
+                </button>
+              }
+            }
 
             @if (!point.detailsLoaded) {
               <p class="lineup-description is-skeleton" aria-hidden="true">
@@ -1108,8 +1144,24 @@
                   (pointerup)="onGuideRolePointerUp('start', $event)"
                   (click)="onGuideRoleSlotClick('start', $event)"
                 >
-                  <small>Start</small>
+                  <small>Stand</small>
                   @if (selectedPointStartMedia(); as media) {
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                  } @else {
+                    <span>Drop image</span>
+                  }
+                </button>
+                <button
+                  class="guide-slot is-compact"
+                  type="button"
+                  [class.is-empty]="!selectedPointAimMedia()"
+                  (dragover)="onGuideRoleDragOver($event)"
+                  (drop)="onGuideRoleDrop('aim', $event)"
+                  (pointerup)="onGuideRolePointerUp('aim', $event)"
+                  (click)="onGuideRoleSlotClick('aim', $event)"
+                >
+                  <small>Aim</small>
+                  @if (selectedPointAimMedia(); as media) {
                     <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
                   } @else {
                     <span>Drop image</span>
@@ -1257,7 +1309,8 @@
           >
             @if (media.type === 'image') {
               <button type="button" (click)="openContextImageEditor($event)">Edit</button>
-              <button type="button" (click)="assignContextMediaRole('start', $event)">Start</button>
+              <button type="button" (click)="assignContextMediaRole('start', $event)">Stand</button>
+              <button type="button" (click)="assignContextMediaRole('aim', $event)">Aim</button>
               <button type="button" (click)="assignContextMediaRole('result', $event)">Result</button>
             }
             <button type="button" class="is-delete" (click)="deleteContextMedia($event)">Delete</button>

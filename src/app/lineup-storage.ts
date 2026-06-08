@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 export type TeamSide = 'ct' | 't';
 export type GrenadeCategoryId = 'smoke' | 'flash' | 'molotov' | 'he';
 export type MediaKind = 'image' | 'video';
-export type MediaRole = 'start' | 'result' | 'detail';
+export type MediaRole = 'start' | 'aim' | 'result' | 'detail';
 
 export type StoredTrajectoryVertex = {
   id: string;
@@ -2423,7 +2423,7 @@ class DesktopLineupStorage implements LineupStoragePort {
       mediaCount: Number(lineup.mediaCount ?? 0),
       mediaRoles: (lineup.mediaRoles ?? '')
         .split(',')
-        .filter((role): role is MediaRole => role === 'start' || role === 'result' || role === 'detail'),
+        .filter((role): role is MediaRole => role === 'start' || role === 'aim' || role === 'result' || role === 'detail'),
       hasTrajectory: trajectory.vertices.length > 0,
       createdAt: lineup.createdAt,
       updatedAt: lineup.updatedAt,

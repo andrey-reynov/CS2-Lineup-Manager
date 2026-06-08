@@ -655,7 +655,7 @@ describe('App', () => {
     expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(true);
   });
 
-  it('should hide menu scrollbar by default and reveal it from settings', async () => {
+  it('should hide scrollbars by default and reveal them from settings', async () => {
     localStorage.removeItem('cs2nades:show-menu-scrollbar');
     localStorage.removeItem('cs2nades:user-settings');
     const fixture = TestBed.createComponent(App);
@@ -663,7 +663,7 @@ describe('App', () => {
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
 
-    expect(compiled.querySelector('.map-buttons')?.classList.contains('show-scrollbar')).toBe(false);
+    expect(compiled.querySelector('.app-shell')?.classList.contains('show-scrollbar')).toBe(false);
 
     (compiled.querySelector('.sidebar-footer .nav-button') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -672,7 +672,7 @@ describe('App', () => {
     checkbox.dispatchEvent(new Event('change', { bubbles: true }));
     fixture.detectChanges();
 
-    expect(compiled.querySelector('.map-buttons')?.classList.contains('show-scrollbar')).toBe(true);
+    expect(compiled.querySelector('.app-shell')?.classList.contains('show-scrollbar')).toBe(true);
     expect(localStorage.getItem('cs2nades:show-menu-scrollbar')).toBe('true');
     expect(JSON.parse(localStorage.getItem('cs2nades:user-settings') ?? '{}').showMenuScrollbar).toBe(true);
     localStorage.removeItem('cs2nades:show-menu-scrollbar');
@@ -1605,7 +1605,7 @@ describe('App', () => {
     expect(compiled.querySelector('.media-context-menu')).toBeTruthy();
 
     (Array.from(compiled.querySelectorAll('.media-context-menu button')) as HTMLButtonElement[])
-      .find((button) => button.textContent?.trim() === 'Start')
+      .find((button) => button.textContent?.trim() === 'Stand')
       ?.click();
     fixture.detectChanges();
 

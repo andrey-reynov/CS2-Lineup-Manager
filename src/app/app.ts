@@ -141,6 +141,7 @@ type PlaylistContextMenu = {
 type AppView = 'home' | 'map' | 'settings';
 type PointMode = 'view' | 'edit';
 type TeamSideFilter = TeamSide | 'any';
+type GuideMediaRole = 'start' | 'aim' | 'result';
 type RailPopover = 'team' | 'grenade';
 type PlaylistPanelMode = 'closed' | 'list' | 'detail' | 'edit';
 type TrajectoryEditMode = 'create' | 'edit';
@@ -236,6 +237,8 @@ type MediaOptimizationState = {
   total: number;
   optimized: number;
   processed: number;
+  beforeBytes?: number;
+  afterBytes?: number;
   error?: string;
 };
 
@@ -648,6 +651,7 @@ export class App {
   protected readonly mediaPoolAssets = signal<PointMedia[]>([]);
   protected readonly importError = signal<string | null>(null);
   protected readonly exportStatus = signal<string | null>(null);
+  protected readonly exportProgress = signal(0);
   protected readonly storageMigrationStatus = signal<StorageMigrationStatus | null>(null);
   protected readonly draggedMediaId = signal<string | null>(null);
   protected readonly selectedMediaId = signal<string | null>(null);
@@ -839,6 +843,13 @@ export class App {
     return state.total > 0 ? Math.round((state.optimized / state.total) * 100) : 0;
   });
 
+  protected readonly isMediaOptimizationBusy = computed(() => {
+    const status = this.mediaOptimization().status;
+    return status === 'scanning' || status === 'running';
+  });
+
+  protected readonly dataActionLocked = computed(() => Boolean(this.exportStatus()) || this.isMediaOptimizationBusy());
+
   protected readonly mediaOptimizationText = computed(() => {
     const state = this.mediaOptimization();
     if (state.status === 'idle') {
@@ -851,7 +862,10 @@ export class App {
       return `Optimized ${state.optimized} of ${state.total} images`;
     }
     if (state.status === 'done') {
-      return `Optimized ${state.optimized} of ${state.total} images`;
+      const sizes = this.mediaOptimizationSizeText(state);
+      return sizes
+        ? `Optimized ${state.optimized} of ${state.total} images · ${sizes}`
+        : `Optimized ${state.optimized} of ${state.total} images`;
     }
     return state.error ?? 'Media optimization failed';
   });
@@ -968,6 +982,10 @@ export class App {
     this.selectedPointMedia().find((media) => media.role === 'start')
   ));
 
+  protected readonly selectedPointAimMedia = computed(() => (
+    this.selectedPointMedia().find((media) => media.role === 'aim')
+  ));
+
   protected readonly selectedPointResultMedia = computed(() => (
     this.selectedPointMedia().find((media) => media.role === 'result')
   ));
@@ -1074,16 +1092,23 @@ export class App {
       return [];
     }
 
-    const vertices = point.trajectory?.vertices ?? [];
+    const points = this.trajectoryPointsFor(point);
     const draft = this.draftTrajectoryVertex();
     return [
-      { id: `${point.id}:result`, x: point.x, y: point.y, role: 'result' as const },
-      ...vertices.map((vertex, index) => ({
-        ...vertex,
-        role: index === vertices.length - 1 ? 'start' as const : 'bend' as const,
-      })),
+      ...points,
       ...(draft ? [{ ...draft, role: 'draft' as const }] : []),
     ];
+  });
+
+  protected readonly displayedTrajectoryLineups = computed(() => {
+    const selected = this.selectedPoint();
+    if (!selected || this.selectedPointMode() === 'edit') {
+      return selected ? [selected] : [];
+    }
+
+    const variants = this.selectedResultSpotVariants()
+      .filter((variant) => (variant.trajectory?.vertices.length ?? 0) > 0);
+    return variants.length > 0 ? variants : [selected];
   });
 
   protected readonly trajectoryRenderPointList = computed(() => {
@@ -1662,6 +1687,10 @@ export class App {
   }
 
   protected async chooseDesktopContentRoot(): Promise<void> {
+    if (this.dataActionLocked()) {
+      return;
+    }
+
     try {
       const currentPath = this.desktopContentRoot();
       if ('__TAURI_INTERNALS__' in globalThis) {
@@ -2185,7 +2214,7 @@ export class App {
 
   protected async optimizeMediaLibrary(): Promise<void> {
     const currentState = this.mediaOptimization();
-    if (currentState.status === 'scanning' || currentState.status === 'running') {
+    if (currentState.status === 'scanning' || currentState.status === 'running' || this.exportStatus()) {
       return;
     }
 
@@ -2194,11 +2223,18 @@ export class App {
       const assets = await this.storage.loadMediaAssetsForOptimization();
       const images = assets.filter((asset) => asset.type === 'image');
       const candidates = images.filter((asset) => !this.isMediaOptimized(asset));
+      const beforeBytes = images.reduce((total, asset) => total + this.mediaAssetByteSize(asset), 0);
+      const alreadyOptimizedBytes = images
+        .filter((asset) => this.isMediaOptimized(asset))
+        .reduce((total, asset) => total + this.mediaAssetByteSize(asset), 0);
+      let optimizedBytes = alreadyOptimizedBytes;
       this.mediaOptimization.set({
         status: candidates.length > 0 ? 'running' : 'done',
         total: images.length,
         optimized: images.length - candidates.length,
         processed: 0,
+        beforeBytes,
+        afterBytes: candidates.length > 0 ? alreadyOptimizedBytes : beforeBytes,
       });
 
       for (const asset of candidates) {
@@ -2225,10 +2261,12 @@ export class App {
         }
 
         await this.storage.updateMediaAssetVariants(patch);
+        optimizedBytes += this.mediaAssetByteSize(patch);
         this.mediaOptimization.update((state) => ({
           ...state,
           optimized: Math.min(state.total, state.optimized + 1),
           processed: state.processed + 1,
+          afterBytes: optimizedBytes,
         }));
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
@@ -2243,6 +2281,8 @@ export class App {
         total: this.mediaOptimization().total,
         optimized: this.mediaOptimization().optimized,
         processed: this.mediaOptimization().processed,
+        beforeBytes: this.mediaOptimization().beforeBytes,
+        afterBytes: this.mediaOptimization().afterBytes,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -2254,6 +2294,39 @@ export class App {
 
   private isCompressedImageMime(mimeType: string): boolean {
     return mimeType === 'image/webp' || mimeType === 'image/jpeg';
+  }
+
+  protected mediaOptimizationSizeText(state = this.mediaOptimization()): string {
+    if (state.beforeBytes === undefined || state.afterBytes === undefined) {
+      return '';
+    }
+
+    return `Before ${this.formatBytes(state.beforeBytes)} · After ${this.formatBytes(state.afterBytes)}`;
+  }
+
+  private mediaAssetByteSize(media: PointMedia): number {
+    return (
+      (media.blob?.size ?? 0) +
+      (media.thumbnailBlob?.size ?? 0) +
+      (media.previewBlob?.size ?? 0)
+    );
+  }
+
+  private formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return '0 B';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = bytes;
+    let index = 0;
+    while (value >= 1024 && index < units.length - 1) {
+      value /= 1024;
+      index += 1;
+    }
+
+    const precision = value >= 10 || index === 0 ? 0 : 1;
+    return `${value.toFixed(precision)} ${units[index]}`;
   }
 
   protected closeMediaPool(): void {
@@ -2311,6 +2384,7 @@ export class App {
       this.trajectoryEditMode.set(null);
       this.selectedTrajectoryVertexId.set(null);
       this.draftTrajectoryVertex.set(null);
+      this.lineupsHiddenOverride.set(false);
     }
   }
 
@@ -2327,6 +2401,7 @@ export class App {
     this.selectedPointMode.set('edit');
     this.updateRailCompactMode();
     this.trajectoryEditMode.set('create');
+    this.lineupsHiddenOverride.set(true);
     this.selectedTrajectoryVertexId.set(null);
     this.draftPoint.set(null);
     this.closePointActionMenu();
@@ -2389,6 +2464,7 @@ export class App {
     this.selectedPointMode.set('edit');
     this.lineupChooserOpen.set(false);
     this.trajectoryEditMode.set('create');
+    this.lineupsHiddenOverride.set(true);
     this.draftTrajectoryVertex.set({
       id: this.createTrajectoryVertexId(variant.id),
       x: variant.x,
@@ -2465,7 +2541,7 @@ export class App {
     return this.selectedRequirements(point, this.mouseRequirements)[0];
   }
 
-  protected mediaForRole(point: MapPoint, role: 'start' | 'result'): PointMedia | undefined {
+  protected mediaForRole(point: MapPoint, role: GuideMediaRole): PointMedia | undefined {
     return (point.media ?? []).find((media) => media.role === role);
   }
 
@@ -2477,12 +2553,13 @@ export class App {
     const media = point.media ?? [];
     return [
       ...media.filter((item) => item.role === 'start'),
+      ...media.filter((item) => item.role === 'aim'),
       ...media.filter((item) => !item.role || item.role === 'detail'),
       ...media.filter((item) => item.role === 'result'),
     ];
   }
 
-  protected assignMediaRole(mediaId: string, role: 'start' | 'result'): void {
+  protected assignMediaRole(mediaId: string, role: GuideMediaRole): void {
     const point = this.selectedPoint();
     if (!point) {
       return;
@@ -2502,7 +2579,7 @@ export class App {
     });
   }
 
-  protected assignSelectedMediaRole(role: 'start' | 'result', event?: Event): void {
+  protected assignSelectedMediaRole(role: GuideMediaRole, event?: Event): void {
     event?.preventDefault();
     event?.stopPropagation();
     const media = this.selectedMedia();
@@ -2511,7 +2588,7 @@ export class App {
     }
   }
 
-  protected onGuideRoleSlotClick(role: 'start' | 'result', event: MouseEvent): void {
+  protected onGuideRoleSlotClick(role: GuideMediaRole, event: MouseEvent): void {
     const selectedMedia = this.selectedMedia();
     if (selectedMedia?.type === 'image') {
       this.assignSelectedMediaRole(role, event);
@@ -2550,7 +2627,7 @@ export class App {
     return (point.media ?? []).find((media) => media.id === menu.mediaId);
   }
 
-  protected assignContextMediaRole(role: 'start' | 'result', event: Event): void {
+  protected assignContextMediaRole(role: GuideMediaRole, event: Event): void {
     event.preventDefault();
     event.stopPropagation();
     const media = this.mediaContextMenuItem();
@@ -2679,7 +2756,7 @@ export class App {
     }
   }
 
-  protected onGuideRoleDrop(role: 'start' | 'result', event: DragEvent): void {
+  protected onGuideRoleDrop(role: GuideMediaRole, event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
     const mediaId = this.draggedMediaId()
@@ -2691,7 +2768,7 @@ export class App {
     }
   }
 
-  protected onGuideRolePointerUp(role: 'start' | 'result', event: PointerEvent): void {
+  protected onGuideRolePointerUp(role: GuideMediaRole, event: PointerEvent): void {
     if (!this.draggedMediaId()) {
       return;
     }
@@ -3067,7 +3144,7 @@ export class App {
     return point.trajectory?.vertices.at(-1);
   }
 
-  protected guideSlotMedia(point: MapPoint, role: 'start' | 'result'): PointMedia | undefined {
+  protected guideSlotMedia(point: MapPoint, role: GuideMediaRole): PointMedia | undefined {
     return this.mediaForRole(point, role);
   }
 
@@ -3085,6 +3162,12 @@ export class App {
 
   protected trajectorySvgPoints(): string {
     return this.trajectorySvgPointList();
+  }
+
+  protected trajectorySvgPointsFor(point: MapPoint): string {
+    return this.trajectoryDisplayPointsFor(point)
+      .map((pathPoint) => `${pathPoint.x},${pathPoint.y}`)
+      .join(' ');
   }
 
   protected trajectorySvgTransform(): string {
@@ -3111,36 +3194,74 @@ export class App {
     return this.trajectoryRenderPointList();
   }
 
+  protected trajectoryPointsFor(point: MapPoint): Array<TrajectoryVertex & { role: 'result' | 'start' | 'bend' }> {
+    const vertices = point.trajectory?.vertices ?? [];
+    return [
+      { id: `${point.id}:result`, x: point.x, y: point.y, role: 'result' as const },
+      ...vertices.map((vertex, index) => ({
+        ...vertex,
+        role: index === vertices.length - 1 ? 'start' as const : 'bend' as const,
+      })),
+    ];
+  }
+
+  protected trajectoryDisplayPointCount(point: MapPoint): number {
+    return this.trajectoryDisplayPointsFor(point).length;
+  }
+
+  private trajectoryDisplayPointsFor(point: MapPoint): Array<TrajectoryVertex & { role: 'result' | 'start' | 'bend' | 'draft' }> {
+    if (point.id === this.selectedPoint()?.id && this.selectedPointMode() === 'edit') {
+      return this.selectedTrajectoryPoints();
+    }
+
+    return this.trajectoryPointsFor(point);
+  }
+
+  protected trajectoryStartPointFor(point: MapPoint): TrajectoryVertex | undefined {
+    return point.trajectory?.vertices.at(-1);
+  }
+
+  protected selectLineupFromStartPoint(point: MapPoint, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.selectLineupVariant(point.id, event);
+  }
+
   protected trajectorySegmentMidpoints(): Array<{ id: string; index: number; x: number; y: number }> {
     return this.trajectorySegmentMidpointList();
   }
 
   protected async exportZip(): Promise<void> {
-    if (this.exportStatus()) {
+    if (this.exportStatus() || this.isMediaOptimizationBusy()) {
       return;
     }
 
     try {
       this.importError.set(null);
-      this.exportStatus.set('Preparing export...');
+      this.exportProgress.set(4);
+      this.exportStatus.set('Exporting your media...');
       await this.nextAnimationFrame();
       const [points, playlists, memberships] = await Promise.all([
         this.storage.loadPoints(),
         this.storage.loadPlaylists(),
         this.storage.loadPlaylistMemberships(),
       ]);
+      this.exportProgress.set(28);
       const blob = await this.storage.exportZip(
         points,
         this.customStoredMaps(),
         playlists,
         memberships,
       );
-      this.exportStatus.set('Choose where to save the ZIP...');
+      this.exportProgress.set(72);
       await this.saveZip(blob, `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`);
+      this.exportProgress.set(100);
+      await this.nextAnimationFrame();
     } catch (error) {
       this.importError.set(error instanceof Error ? error.message : 'Export failed');
     } finally {
       this.exportStatus.set(null);
+      this.exportProgress.set(0);
     }
   }
 
@@ -3263,18 +3384,12 @@ export class App {
       });
       append = true;
       written += chunk.byteLength;
-      this.exportStatus.set(`Saving export... ${this.percentText(written, blob.size)}`);
+      const chunkProgress = blob.size > 0 ? (written / blob.size) : 1;
+      this.exportProgress.set(Math.min(98, Math.round(72 + chunkProgress * 26)));
       await this.nextAnimationFrame();
     }
 
     return savedPath;
-  }
-
-  private percentText(done: number, total: number): string {
-    if (total <= 0) {
-      return '';
-    }
-    return `${Math.min(100, Math.round((done / total) * 100))}%`;
   }
 
   private nextAnimationFrame(): Promise<void> {
@@ -3282,6 +3397,10 @@ export class App {
   }
 
   protected async importZip(event?: Event): Promise<void> {
+    if (this.dataActionLocked()) {
+      return;
+    }
+
     const file = event ? this.fileFromInputEvent(event) : await this.pickZipFile();
     if (!file) {
       return;
@@ -4027,7 +4146,7 @@ export class App {
     name: string;
     mimeType: string;
     id: string;
-    role: 'detail' | 'start' | 'result';
+    role: 'detail' | GuideMediaRole;
     sourceLineupId: string;
     sourceLineupTitle: string;
     createdAt?: string;
@@ -4145,6 +4264,7 @@ export class App {
   private sortRoleMedia(media: PointMedia[]): PointMedia[] {
     return [
       ...media.filter((item) => item.role === 'start'),
+      ...media.filter((item) => item.role === 'aim'),
       ...media.filter((item) => !item.role || item.role === 'detail'),
       ...media.filter((item) => item.role === 'result'),
     ];
