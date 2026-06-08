@@ -314,15 +314,13 @@
                   @if (trajectoryDisplayPointCount(lineup) > 1) {
                     <svg
                       class="trajectory-layer"
-                      [class.is-muted]="lineup.id !== selectedPoint()?.id"
-                      viewBox="0 0 100 100"
+                      [class.is-muted]="!lineupChooserOpen() && lineup.id !== selectedPoint()?.id"
+                      [attr.viewBox]="trajectorySvgViewBox()"
                       preserveAspectRatio="none"
                       aria-hidden="true"
                     >
-                      <g [attr.transform]="trajectorySvgTransform()">
-                        <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPointsFor(lineup)"></polyline>
-                        <polyline class="trajectory-line" [attr.points]="trajectorySvgPointsFor(lineup)"></polyline>
-                      </g>
+                      <polyline class="trajectory-line-shadow" [attr.points]="trajectorySvgPointsFor(lineup)"></polyline>
+                      <polyline class="trajectory-line" [attr.points]="trajectorySvgPointsFor(lineup)"></polyline>
                     </svg>
 
                     @if (selectedPointMode() === 'view') {
@@ -330,7 +328,7 @@
                         <button
                           class="trajectory-vertex is-start is-lineup-selector"
                           type="button"
-                          [class.is-selected]="lineup.id === selectedPoint()?.id"
+                          [class.is-selected]="!lineupChooserOpen() && lineup.id === selectedPoint()?.id"
                           [style.left]="mapOverlayLeft(start)"
                           [style.top]="mapOverlayTop(start)"
                           [attr.aria-label]="'Select ' + displayTitle(lineup)"
@@ -994,12 +992,18 @@
               }
             } @else {
               @if (selectedPointStartMedia(); as media) {
-                <button class="guide-slot" type="button" (click)="openMediaPreview(media)" (mousemove)="updateGuidePreviewFocus($event)">
+                <button
+                  class="guide-slot"
+                  type="button"
+                  (click)="openMediaPreview(media)"
+                  (mousemove)="updateGuidePreviewFocus($event)"
+                  (wheel)="onGuidePreviewWheel($event)"
+                >
                   <small>Stand</small>
                   @if (media.type === 'image') {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
-                    <video [src]="media.url" muted></video>
+                    <video [src]="media.url" muted (loadedmetadata)="onGuideMediaLoaded($event)"></video>
                   }
                   @if (point.detailsLoaded) {
                     <div class="guide-throw-overlay">
@@ -1024,22 +1028,34 @@
                 </button>
               }
               @if (selectedPointAimMedia(); as media) {
-                <button class="guide-slot" type="button" (click)="openMediaPreview(media)" (mousemove)="updateGuidePreviewFocus($event)">
+                <button
+                  class="guide-slot"
+                  type="button"
+                  (click)="openMediaPreview(media)"
+                  (mousemove)="updateGuidePreviewFocus($event)"
+                  (wheel)="onGuidePreviewWheel($event)"
+                >
                   <small>Aim</small>
                   @if (media.type === 'image') {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
-                    <video [src]="media.url" muted></video>
+                    <video [src]="media.url" muted (loadedmetadata)="onGuideMediaLoaded($event)"></video>
                   }
                 </button>
               }
               @if (selectedPointResultMedia(); as media) {
-                <button class="guide-slot" type="button" (click)="openMediaPreview(media)" (mousemove)="updateGuidePreviewFocus($event)">
+                <button
+                  class="guide-slot"
+                  type="button"
+                  (click)="openMediaPreview(media)"
+                  (mousemove)="updateGuidePreviewFocus($event)"
+                  (wheel)="onGuidePreviewWheel($event)"
+                >
                   <small>Result</small>
                   @if (media.type === 'image') {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
-                    <video [src]="media.url" muted></video>
+                    <video [src]="media.url" muted (loadedmetadata)="onGuideMediaLoaded($event)"></video>
                   }
                 </button>
               }
@@ -1146,7 +1162,7 @@
                 >
                   <small>Stand</small>
                   @if (selectedPointStartMedia(); as media) {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
                     <span>Drop image</span>
                   }
@@ -1162,7 +1178,7 @@
                 >
                   <small>Aim</small>
                   @if (selectedPointAimMedia(); as media) {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
                     <span>Drop image</span>
                   }
@@ -1178,7 +1194,7 @@
                 >
                   <small>Result</small>
                   @if (selectedPointResultMedia(); as media) {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" />
+                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
                     <span>Drop image</span>
                   }

@@ -1106,6 +1106,10 @@ export class App {
       return selected ? [selected] : [];
     }
 
+    if (!this.lineupChooserOpen()) {
+      return [selected];
+    }
+
     const variants = this.selectedResultSpotVariants()
       .filter((variant) => (variant.trajectory?.vertices.length ?? 0) > 0);
     return variants.length > 0 ? variants : [selected];
@@ -1994,6 +1998,9 @@ export class App {
       this.closePointActionMenu();
       this.updateRailCompactMode();
       await this.ensureResultSpotHydrated(point);
+      if (this.selectedPointId() === point.id && this.selectedPointMode() === 'view') {
+        this.lineupChooserOpen.set(this.resultSpotVariantCount(point) > 1);
+      }
       return;
     }
 
@@ -2167,6 +2174,29 @@ export class App {
       this.guidePreviewFocusTarget?.style.setProperty('--preview-focus-x', `${this.guidePreviewFocus.x}%`);
       this.guidePreviewFocusTarget?.style.setProperty('--preview-focus-y', `${this.guidePreviewFocus.y}%`);
     });
+  }
+
+  protected onGuideMediaLoaded(event: Event): void {
+    const media = event.currentTarget as HTMLImageElement | HTMLVideoElement;
+    const slot = media.closest('.guide-slot') as HTMLElement | null;
+    if (!slot) {
+      return;
+    }
+
+    const width = media instanceof HTMLImageElement ? media.naturalWidth : media.videoWidth;
+    const height = media instanceof HTMLImageElement ? media.naturalHeight : media.videoHeight;
+    if (width > 0 && height > 0) {
+      slot.style.setProperty('--guide-media-aspect-ratio', `${width} / ${height}`);
+    }
+  }
+
+  protected onGuidePreviewWheel(event: WheelEvent): void {
+    const slot = event.currentTarget as HTMLElement;
+    event.preventDefault();
+    event.stopPropagation();
+    const current = Number.parseFloat(slot.style.getPropertyValue('--guide-preview-zoom')) || 4;
+    const next = Math.max(4, Math.min(8, current + (event.deltaY < 0 ? 0.4 : -0.4)));
+    slot.style.setProperty('--guide-preview-zoom', next.toFixed(2));
   }
 
   protected toggleRequirement(requirementId: string, checked: boolean): void {
@@ -2922,7 +2952,7 @@ export class App {
 
   protected zoomPreview(delta: number, event?: Event): void {
     event?.stopPropagation();
-    const zoom = Math.max(1, Math.min(5, this.previewZoom() + delta));
+    const zoom = Math.max(1, Math.min(8, this.previewZoom() + delta));
     this.previewZoom.set(zoom);
     if (zoom === 1) {
       this.previewPan.set({ x: 0, y: 0 });
@@ -3166,8 +3196,13 @@ export class App {
 
   protected trajectorySvgPointsFor(point: MapPoint): string {
     return this.trajectoryDisplayPointsFor(point)
-      .map((pathPoint) => `${pathPoint.x},${pathPoint.y}`)
+      .map((pathPoint) => `${this.mapOverlayX(pathPoint)},${this.mapOverlayY(pathPoint)}`)
       .join(' ');
+  }
+
+  protected trajectorySvgViewBox(): string {
+    const size = this.mapSurfaceSize();
+    return `0 0 ${Math.max(1, size.width)} ${Math.max(1, size.height)}`;
   }
 
   protected trajectorySvgTransform(): string {
@@ -3188,6 +3223,14 @@ export class App {
 
   protected mapOverlayTop(point: Pick<MapPoint, 'y'>): string {
     return `calc(${point.y * this.mapZoom()}% + ${this.mapPan().y}px)`;
+  }
+
+  private mapOverlayX(point: Pick<MapPoint, 'x'>): number {
+    return ((point.x / 100) * this.mapSurfaceSize().width * this.mapZoom()) + this.mapPan().x;
+  }
+
+  private mapOverlayY(point: Pick<MapPoint, 'y'>): number {
+    return ((point.y / 100) * this.mapSurfaceSize().height * this.mapZoom()) + this.mapPan().y;
   }
 
   protected trajectoryRenderPoints(): Array<{ x: number; y: number }> {
