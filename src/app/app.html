@@ -236,6 +236,30 @@
           @if (exportStatus()) {
             <p class="settings-status">{{ exportStatus() }}</p>
           }
+
+          <p class="settings-category">Media maintenance</p>
+          <section class="settings-card" aria-label="Media optimization">
+            <div class="settings-path-row">
+              <div class="settings-path-copy">
+                <span>Optimize data</span>
+                <strong>{{ mediaOptimizationText() }}</strong>
+              </div>
+              <button
+                type="button"
+                class="settings-path-button ui-button"
+                [disabled]="mediaOptimization().status === 'scanning' || mediaOptimization().status === 'running'"
+                (click)="optimizeMediaLibrary()"
+              >
+                {{ mediaOptimization().status === 'running' || mediaOptimization().status === 'scanning' ? 'Optimizing' : 'Optimize' }}
+              </button>
+            </div>
+            <div class="settings-progress" aria-label="Media optimization progress">
+              <span [style.width.%]="mediaOptimizationPercent()"></span>
+            </div>
+            <small class="settings-muted">
+              Builds thumb and preview files for old images. Originals stay untouched for fullscreen preview and export.
+            </small>
+          </section>
         </section>
       } @else if (selectedMap(); as map) {
         @if (selectedLevel(); as level) {

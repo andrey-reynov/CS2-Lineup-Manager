@@ -231,6 +231,14 @@ type PerformanceLogEntry = {
   details?: Record<string, unknown>;
 };
 
+type MediaOptimizationState = {
+  status: 'idle' | 'scanning' | 'running' | 'done' | 'error';
+  total: number;
+  optimized: number;
+  processed: number;
+  error?: string;
+};
+
 const GRENADE_CATEGORIES: GrenadeCategory[] = [
   {
     id: 'smoke',
@@ -295,8 +303,10 @@ const POINT_ACTION_MENU_GAP = 10;
 const POINT_ACTION_MENU_EDGE_PADDING = 8;
 const MEDIA_THUMB_MAX_SIZE = 320;
 const MEDIA_PREVIEW_MAX_SIZE = 960;
+const MEDIA_LARGE_MAX_SIZE = 1920;
 const MEDIA_THUMB_QUALITY = 0.68;
 const MEDIA_PREVIEW_QUALITY = 0.78;
+const MEDIA_LARGE_QUALITY = 0.82;
 const SHOW_MENU_SCROLLBAR_STORAGE_KEY = 'cs2nades:show-menu-scrollbar';
 const USER_SETTINGS_STORAGE_KEY = 'cs2nades:user-settings';
 const FULL_RAIL_REQUIRED_WIDTH = 620;
@@ -645,6 +655,12 @@ export class App {
   protected readonly imageEditorPlaylistThumbnailOpen = signal(false);
   protected readonly performanceEntries = signal<PerformanceLogEntry[]>([]);
   protected readonly lineupsHiddenOverride = signal<boolean | null>(null);
+  protected readonly mediaOptimization = signal<MediaOptimizationState>({
+    status: 'idle',
+    total: 0,
+    optimized: 0,
+    processed: 0,
+  });
   protected readonly trajectoryEditMode = signal<TrajectoryEditMode | null>(null);
   protected readonly selectedTrajectoryVertexId = signal<string | null>(null);
   protected readonly draftTrajectoryVertex = signal<TrajectoryVertex | null>(null);
@@ -817,6 +833,28 @@ export class App {
   protected readonly lineupVisibilityTip = computed(() => (
     this.lineupsHidden() ? 'Press H to show lineups' : 'Press H to hide lineups'
   ));
+
+  protected readonly mediaOptimizationPercent = computed(() => {
+    const state = this.mediaOptimization();
+    return state.total > 0 ? Math.round((state.optimized / state.total) * 100) : 0;
+  });
+
+  protected readonly mediaOptimizationText = computed(() => {
+    const state = this.mediaOptimization();
+    if (state.status === 'idle') {
+      return 'Create lightweight thumbnails/previews for existing images.';
+    }
+    if (state.status === 'scanning') {
+      return 'Scanning media library...';
+    }
+    if (state.status === 'running') {
+      return `Optimized ${state.optimized} of ${state.total} images`;
+    }
+    if (state.status === 'done') {
+      return `Optimized ${state.optimized} of ${state.total} images`;
+    }
+    return state.error ?? 'Media optimization failed';
+  });
 
   protected readonly selectedPoint = computed(() => {
     const selectedPointId = this.selectedPointId();
@@ -2143,6 +2181,79 @@ export class App {
     } catch {
       this.mediaPoolAssets.set([]);
     }
+  }
+
+  protected async optimizeMediaLibrary(): Promise<void> {
+    const currentState = this.mediaOptimization();
+    if (currentState.status === 'scanning' || currentState.status === 'running') {
+      return;
+    }
+
+    this.mediaOptimization.set({ status: 'scanning', total: 0, optimized: 0, processed: 0 });
+    try {
+      const assets = await this.storage.loadMediaAssetsForOptimization();
+      const images = assets.filter((asset) => asset.type === 'image');
+      const candidates = images.filter((asset) => !this.isMediaOptimized(asset));
+      this.mediaOptimization.set({
+        status: candidates.length > 0 ? 'running' : 'done',
+        total: images.length,
+        optimized: images.length - candidates.length,
+        processed: 0,
+      });
+
+      for (const asset of candidates) {
+        const patch: PointMedia = { ...asset };
+        if (!this.isCompressedImageMime(asset.mimeType)) {
+          const large = await this.createImageVariant(asset.blob, MEDIA_LARGE_MAX_SIZE, MEDIA_LARGE_QUALITY);
+          patch.name = this.optimizedImageName(asset.name, large.mimeType);
+          patch.mimeType = large.mimeType;
+          patch.blob = large.blob;
+          patch.url = URL.createObjectURL(large.blob);
+        }
+        const variantSource = patch.blob;
+        if (!asset.thumbnailBlob) {
+          const thumbnail = await this.createImageVariant(variantSource, MEDIA_THUMB_MAX_SIZE, MEDIA_THUMB_QUALITY);
+          patch.thumbnailBlob = thumbnail.blob;
+          patch.thumbnailUrl = URL.createObjectURL(thumbnail.blob);
+          patch.thumbnailMimeType = thumbnail.mimeType;
+        }
+        if (!asset.previewBlob) {
+          const preview = await this.createImageVariant(variantSource, MEDIA_PREVIEW_MAX_SIZE, MEDIA_PREVIEW_QUALITY);
+          patch.previewBlob = preview.blob;
+          patch.previewUrl = URL.createObjectURL(preview.blob);
+          patch.previewMimeType = preview.mimeType;
+        }
+
+        await this.storage.updateMediaAssetVariants(patch);
+        this.mediaOptimization.update((state) => ({
+          ...state,
+          optimized: Math.min(state.total, state.optimized + 1),
+          processed: state.processed + 1,
+        }));
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      }
+
+      this.mediaOptimization.update((state) => ({ ...state, status: 'done' }));
+      if (this.mediaPoolOpen()) {
+        this.mediaPoolAssets.set(await this.storage.loadMediaAssets());
+      }
+    } catch (error) {
+      this.mediaOptimization.set({
+        status: 'error',
+        total: this.mediaOptimization().total,
+        optimized: this.mediaOptimization().optimized,
+        processed: this.mediaOptimization().processed,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private isMediaOptimized(media: PointMedia): boolean {
+    return this.isCompressedImageMime(media.mimeType) && Boolean(media.thumbnailBlob && media.previewBlob);
+  }
+
+  private isCompressedImageMime(mimeType: string): boolean {
+    return mimeType === 'image/webp' || mimeType === 'image/jpeg';
   }
 
   protected closeMediaPool(): void {
@@ -3939,12 +4050,17 @@ export class App {
     }
 
     try {
+      const large = await this.createImageVariant(options.blob, MEDIA_LARGE_MAX_SIZE, MEDIA_LARGE_QUALITY);
       const [thumbnail, preview] = await Promise.all([
-        this.createImageVariant(options.blob, MEDIA_THUMB_MAX_SIZE, MEDIA_THUMB_QUALITY),
-        this.createImageVariant(options.blob, MEDIA_PREVIEW_MAX_SIZE, MEDIA_PREVIEW_QUALITY),
+        this.createImageVariant(large.blob, MEDIA_THUMB_MAX_SIZE, MEDIA_THUMB_QUALITY),
+        this.createImageVariant(large.blob, MEDIA_PREVIEW_MAX_SIZE, MEDIA_PREVIEW_QUALITY),
       ]);
       return {
         ...media,
+        name: this.optimizedImageName(options.name, large.mimeType),
+        mimeType: large.mimeType,
+        blob: large.blob,
+        url: URL.createObjectURL(large.blob),
         thumbnailBlob: thumbnail.blob,
         thumbnailUrl: URL.createObjectURL(thumbnail.blob),
         thumbnailMimeType: thumbnail.mimeType,
@@ -3955,6 +4071,15 @@ export class App {
     } catch {
       return media;
     }
+  }
+
+  private optimizedImageName(name: string, mimeType: string): string {
+    const extension = mimeType === 'image/webp' ? 'webp' : mimeType === 'image/jpeg' ? 'jpg' : '';
+    if (!extension) {
+      return name;
+    }
+    const baseName = name.replace(/\.[^.\\/]+$/, '') || 'image';
+    return `${baseName}.${extension}`;
   }
 
   private async createImageVariant(
@@ -3982,7 +4107,7 @@ export class App {
       await Promise.race([
         loaded,
         new Promise<never>((_, reject) => {
-          window.setTimeout(() => reject(new Error('Image variant decode timed out')), 80);
+          window.setTimeout(() => reject(new Error('Image variant decode timed out')), 3000);
         }),
       ]);
 

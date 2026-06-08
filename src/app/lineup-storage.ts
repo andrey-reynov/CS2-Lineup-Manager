@@ -228,6 +228,8 @@ export interface LineupStoragePort {
   deleteLineupVariant?(lineupId: string): Promise<void>;
   loadMediaAssets?(): Promise<StoredMedia[]>;
   addMediaAsset?(media: StoredMedia, mapId?: string): Promise<StoredMedia>;
+  loadMediaAssetsForOptimization?(): Promise<StoredMedia[]>;
+  updateMediaAssetVariants?(media: StoredMedia): Promise<void>;
   attachMediaToLineup?(lineupId: string, media: StoredMedia, role: MediaRole, sortOrder?: number): Promise<void>;
   getMigrationStatus?(): Promise<StorageMigrationStatus>;
   migrateLegacyData?(contentRoot?: string): Promise<void>;
@@ -593,8 +595,39 @@ export class WebLineupStorage implements LineupStoragePort {
       .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   }
 
+  async loadMediaAssetsForOptimization(): Promise<StoredMedia[]> {
+    return this.loadMediaAssets();
+  }
+
   async addMediaAsset(media: StoredMedia): Promise<StoredMedia> {
     return { ...media, role: 'detail', createdAt: media.createdAt ?? new Date().toISOString() };
+  }
+
+  async updateMediaAssetVariants(media: StoredMedia): Promise<void> {
+    if (!this.hasIndexedDb()) {
+      return;
+    }
+
+    const db = await this.openDb();
+    const mediaRecords = await this.getAll<MediaRecord>(db, MEDIA_STORE);
+    await this.transaction(db, [MEDIA_STORE], 'readwrite', (transaction) => {
+      const store = transaction.objectStore(MEDIA_STORE);
+      for (const record of mediaRecords) {
+        if (this.mediaAssetId(record) !== media.id) {
+          continue;
+        }
+        store.put({
+          ...record,
+          name: media.name ?? record.name,
+          mimeType: media.mimeType ?? record.mimeType,
+          blob: media.blob ?? record.blob,
+          thumbnailBlob: media.thumbnailBlob ?? record.thumbnailBlob,
+          thumbnailMimeType: media.thumbnailMimeType ?? record.thumbnailMimeType,
+          previewBlob: media.previewBlob ?? record.previewBlob,
+          previewMimeType: media.previewMimeType ?? record.previewMimeType,
+        } satisfies MediaRecord);
+      }
+    });
   }
 
   async attachMediaToLineup(): Promise<void> {
@@ -1242,6 +1275,24 @@ export class WebLineupStorage implements LineupStoragePort {
       '_Pool',
       `${variantPrefix}${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
     ].join('/');
+  }
+
+  private derivativeMediaPath(originalPath: string, variant: 'thumb' | 'preview' | 'large', mimeType?: string): string {
+    const normalizedPath = originalPath.replace(/\\/g, '/');
+    const slashIndex = normalizedPath.lastIndexOf('/');
+    const directory = slashIndex >= 0 ? normalizedPath.slice(0, slashIndex) : '';
+    const fileName = slashIndex >= 0 ? normalizedPath.slice(slashIndex + 1) : normalizedPath;
+    const nextFileName = mimeType ? this.fileNameWithMimeType(fileName, mimeType) : fileName;
+    return [directory, `${variant}-${nextFileName}`].filter(Boolean).join('/');
+  }
+
+  private fileNameWithMimeType(fileName: string, mimeType: string): string {
+    const extension = mimeType === 'image/webp' ? 'webp' : mimeType === 'image/jpeg' ? 'jpg' : '';
+    if (!extension) {
+      return fileName;
+    }
+    const baseName = fileName.replace(/\.[^.\\/]+$/, '') || 'image';
+    return `${baseName}.${extension}`;
   }
 
   private safeFolderName(name: string): string {
@@ -1903,6 +1954,105 @@ class DesktopLineupStorage implements LineupStoragePort {
     return mediaAsset;
   }
 
+  async loadMediaAssetsForOptimization(): Promise<StoredMedia[]> {
+    const db = await this.db();
+    const workspace = await this.workspace();
+    const rows = await db.select<Array<MediaRow & { sourceLineupTitle?: string }>>(
+      `SELECT media_assets.id, media_assets.name, media_assets.type, media_assets.mimeType,
+        media_assets.path, media_assets.thumbnailPath, media_assets.thumbnailMimeType,
+        media_assets.previewPath, media_assets.previewMimeType,
+        media_assets.createdAt, lineup_media.lineupId AS sourceLineupId,
+        lineups.title AS sourceLineupTitle, 'detail' AS role, 0 AS sortOrder
+      FROM media_assets
+      LEFT JOIN lineup_media ON lineup_media.mediaId = media_assets.id
+      LEFT JOIN lineups ON lineups.id = lineup_media.lineupId
+      GROUP BY media_assets.id
+      ORDER BY media_assets.createdAt DESC`,
+    );
+
+    return Promise.all(rows.map(async (media) => {
+      const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+      const thumbnailBlob = media.thumbnailPath && media.thumbnailMimeType
+        ? await this.readBlob(workspace.rootDir, media.thumbnailPath, media.thumbnailMimeType)
+        : undefined;
+      const previewBlob = media.previewPath && media.previewMimeType
+        ? await this.readBlob(workspace.rootDir, media.previewPath, media.previewMimeType)
+        : undefined;
+      return {
+        id: media.id,
+        name: media.name,
+        type: media.type,
+        mimeType: media.mimeType,
+        blob,
+        url: URL.createObjectURL(blob),
+        thumbnailBlob,
+        thumbnailUrl: thumbnailBlob ? URL.createObjectURL(thumbnailBlob) : undefined,
+        thumbnailMimeType: media.thumbnailMimeType,
+        previewBlob,
+        previewUrl: previewBlob ? URL.createObjectURL(previewBlob) : undefined,
+        previewMimeType: media.previewMimeType,
+        role: 'detail',
+        createdAt: media.createdAt,
+        sourceLineupId: media.sourceLineupId,
+        sourceLineupTitle: media.sourceLineupTitle,
+      } satisfies StoredMedia;
+    }));
+  }
+
+  async updateMediaAssetVariants(media: StoredMedia): Promise<void> {
+    if (!media.blob && !media.thumbnailBlob && !media.previewBlob) {
+      return;
+    }
+
+    const db = await this.db();
+    const workspace = await this.workspace();
+    const rows = await db.select<Array<{ path: string; mimeType: string }>>(
+      'SELECT path, mimeType FROM media_assets WHERE id = $1 LIMIT 1',
+      [media.id],
+    );
+    const originalPath = rows[0]?.path;
+    if (!originalPath) {
+      return;
+    }
+
+    const compressedPath = media.blob && media.mimeType !== rows[0]?.mimeType
+      ? this.derivativeMediaPath(originalPath, 'large', media.mimeType)
+      : null;
+    const thumbnailPath = media.thumbnailBlob ? this.derivativeMediaPath(originalPath, 'thumb') : null;
+    const previewPath = media.previewBlob ? this.derivativeMediaPath(originalPath, 'preview') : null;
+    if (compressedPath && media.blob) {
+      await this.writeBlob(workspace.rootDir, compressedPath, media.blob);
+    }
+    if (thumbnailPath && media.thumbnailBlob) {
+      await this.writeBlob(workspace.rootDir, thumbnailPath, media.thumbnailBlob);
+    }
+    if (previewPath && media.previewBlob) {
+      await this.writeBlob(workspace.rootDir, previewPath, media.previewBlob);
+    }
+
+    await db.execute(
+      `UPDATE media_assets SET
+        name=COALESCE($2, name),
+        mimeType=COALESCE($3, mimeType),
+        path=COALESCE($4, path),
+        thumbnailPath=COALESCE($5, thumbnailPath),
+        thumbnailMimeType=COALESCE($6, thumbnailMimeType),
+        previewPath=COALESCE($7, previewPath),
+        previewMimeType=COALESCE($8, previewMimeType)
+      WHERE id = $1`,
+      [
+        media.id,
+        compressedPath ? media.name : null,
+        compressedPath ? media.mimeType : null,
+        compressedPath,
+        thumbnailPath,
+        media.thumbnailMimeType ?? null,
+        previewPath,
+        media.previewMimeType ?? null,
+      ],
+    );
+  }
+
   async attachMediaToLineup(lineupId: string, media: StoredMedia, role: MediaRole, sortOrder = 0): Promise<void> {
     const db = await this.db();
     await db.execute(
@@ -2324,6 +2474,24 @@ class DesktopLineupStorage implements LineupStoragePort {
       `${variantPrefix}${role}-${this.safeFileName(media.id)}-${this.safeFileName(media.name)}`,
     ].join('/');
   }
+
+  private derivativeMediaPath(originalPath: string, variant: 'thumb' | 'preview' | 'large', mimeType?: string): string {
+    const normalizedPath = originalPath.replace(/\\/g, '/');
+    const slashIndex = normalizedPath.lastIndexOf('/');
+    const directory = slashIndex >= 0 ? normalizedPath.slice(0, slashIndex) : '';
+    const fileName = slashIndex >= 0 ? normalizedPath.slice(slashIndex + 1) : normalizedPath;
+    const nextFileName = mimeType ? this.fileNameWithMimeType(fileName, mimeType) : fileName;
+    return [directory, `${variant}-${nextFileName}`].filter(Boolean).join('/');
+  }
+
+  private fileNameWithMimeType(fileName: string, mimeType: string): string {
+    const extension = mimeType === 'image/webp' ? 'webp' : mimeType === 'image/jpeg' ? 'jpg' : '';
+    if (!extension) {
+      return fileName;
+    }
+    const baseName = fileName.replace(/\.[^.\\/]+$/, '') || 'image';
+    return `${baseName}.${extension}`;
+  }
 }
 
 export class LineupStorage implements LineupStoragePort {
@@ -2492,6 +2660,16 @@ export class LineupStorage implements LineupStoragePort {
   async addMediaAsset(media: StoredMedia, mapId?: string): Promise<StoredMedia> {
     const storage = await this.activeStorage();
     return storage.addMediaAsset?.(media, mapId) ?? media;
+  }
+
+  async loadMediaAssetsForOptimization(): Promise<StoredMedia[]> {
+    const storage = await this.activeStorage();
+    return storage.loadMediaAssetsForOptimization?.() ?? storage.loadMediaAssets?.() ?? [];
+  }
+
+  async updateMediaAssetVariants(media: StoredMedia): Promise<void> {
+    const storage = await this.activeStorage();
+    await storage.updateMediaAssetVariants?.(media);
   }
 
   async attachMediaToLineup(lineupId: string, media: StoredMedia, role: MediaRole, sortOrder = 0): Promise<void> {
