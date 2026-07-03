@@ -1,0 +1,16 @@
+﻿{
+    "generatedAt":  "2026-05-24T15:33:18.5946950Z",
+    "cs2Path":  "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive",
+    "pakPath":  "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive\\game\\csgo\\pak01_dir.vpk",
+    "source2ViewerCli":  "C:\\Users\\MyPC\\Documents\\Dev\\cs2nades\\.tools\\Source2Viewer\\Source2Viewer-CLI.exe",
+    "exportedFolders":  [
+                            "panorama/images/overheadmaps",
+                            "resource/overviews",
+                            "panorama/images/icons/equipment"
+                        ],
+    "nextNormalizationTargets":  [
+                                     "Copy radar PNG files from _raw/panorama/images/overheadmaps into maps/\u003cmap\u003e/",
+                                     "Parse overview TXT files from _raw/resource/overviews into maps/\u003cmap\u003e/overview.json",
+                                     "Copy grenade icons from _raw/panorama/images/icons/equipment into grenades/"
+                                 ]
+}

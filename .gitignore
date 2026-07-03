@@ -42,7 +42,7 @@ __screenshots__/
 # Local tools and generated asset smoke tests
 /.tools
 /.scaffold
-/public/cs2-assets-smoke
+# /public/cs2-assets-smoke
 
 # System files
 .DS_Store
