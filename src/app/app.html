@@ -246,11 +246,75 @@
           @if (exportStatus()) {
             <section class="settings-process" aria-live="polite" aria-label="Export progress">
               <span class="settings-spinner" aria-hidden="true"></span>
-              <strong>Exporting your media...</strong>
+              <strong>{{ exportStatus() }}</strong>
               <div class="settings-progress">
                 <span [style.width.%]="exportProgress()"></span>
               </div>
             </section>
+          }
+
+          <p class="settings-category">Cloud backups</p>
+          <section class="settings-card settings-integrations" aria-label="Cloud backup integrations">
+            @for (providerId of ['googleDrive', 'yandexDisk']; track providerId) {
+              <article class="settings-integration-row" [class.is-connected]="cloudProvider($any(providerId)).connected">
+                <div class="settings-integration-brand">
+                  <span
+                    class="settings-integration-badge"
+                    [class.is-google]="providerId === 'googleDrive'"
+                    [class.is-yandex]="providerId === 'yandexDisk'"
+                    aria-hidden="true"
+                  >
+                    {{ providerId === 'googleDrive' ? 'G' : 'Y' }}
+                  </span>
+                  <div class="settings-integration-copy">
+                    <div class="settings-integration-title-row">
+                      <strong>{{ cloudProvider($any(providerId)).displayName }}</strong>
+                      <span
+                        class="settings-integration-status"
+                        [class.is-connected]="cloudProvider($any(providerId)).connected"
+                        [class.is-warning]="!cloudProvider($any(providerId)).configured"
+                      >
+                        {{
+                          !cloudProvider($any(providerId)).configured
+                            ? 'Env required'
+                            : cloudProvider($any(providerId)).connected
+                              ? 'Connected'
+                              : 'Disconnected'
+                        }}
+                      </span>
+                    </div>
+                    <small>{{ cloudProvider($any(providerId)).detail }}</small>
+                    <small class="settings-integration-meta">{{ cloudLastBackupText($any(providerId)) }}</small>
+                  </div>
+                </div>
+                <div class="settings-integration-actions">
+                  <button
+                    type="button"
+                    class="ui-button"
+                    [disabled]="dataActionLocked() || cloudProviderBusy($any(providerId)) || !cloudProvider($any(providerId)).configured"
+                    (click)="triggerCloudProviderAction($any(providerId))"
+                  >
+                    @if (cloudProviderBusy($any(providerId))) {
+                      <span class="settings-inline-spinner" aria-hidden="true"></span>
+                    }
+                    {{ cloudPrimaryActionLabel($any(providerId)) }}
+                  </button>
+                  @if (cloudProvider($any(providerId)).connected) {
+                    <button
+                      type="button"
+                      class="ui-button is-ghost settings-disconnect-button"
+                      [disabled]="dataActionLocked() || cloudProviderBusy($any(providerId))"
+                      (click)="disconnectCloudProvider($any(providerId))"
+                    >
+                      Disconnect
+                    </button>
+                  }
+                </div>
+              </article>
+            }
+          </section>
+          @if (cloudError()) {
+            <p class="settings-error">{{ cloudError() }}</p>
           }
 
           <section class="settings-card" aria-label="Media optimization">

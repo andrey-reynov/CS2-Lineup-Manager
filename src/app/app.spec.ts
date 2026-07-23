@@ -134,6 +134,63 @@ describe('App', () => {
     expect(compiled.querySelector('.app-shell')?.classList.contains('is-sidebar-closed')).toBe(false);
   });
 
+  it('should render cloud integrations in settings without desktop auth', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    (compiled.querySelector('.nav-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const integrations = Array.from(compiled.querySelectorAll('.settings-integration-row'));
+    expect(integrations).toHaveLength(2);
+    expect(integrations[0]?.textContent).toContain('Google Drive');
+    expect(integrations[1]?.textContent).toContain('Yandex.Disk');
+    expect(compiled.textContent).toContain('Env required');
+
+    const primaryButtons = Array.from(compiled.querySelectorAll('.settings-integration-actions .ui-button')) as HTMLButtonElement[];
+    expect(primaryButtons.some((button) => button.textContent?.includes('Set env'))).toBe(true);
+    expect(primaryButtons.every((button) => button.disabled)).toBe(true);
+  });
+
+  it('should show backup and disconnect actions for connected cloud providers', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    app.cloudProviders.set([
+      {
+        id: 'googleDrive',
+        displayName: 'Google Drive',
+        configured: true,
+        connected: true,
+        detail: 'Uploads go to CS2 Nades Backups.',
+        lastBackupAtEpochMs: Date.now(),
+      },
+      {
+        id: 'yandexDisk',
+        displayName: 'Yandex.Disk',
+        configured: true,
+        connected: false,
+        detail: 'Open the default browser to connect.',
+      },
+    ]);
+
+    (compiled.querySelector('.nav-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const integrationRows = Array.from(compiled.querySelectorAll('.settings-integration-row'));
+    expect(integrationRows[0]?.textContent).toContain('Connected');
+    expect(integrationRows[0]?.textContent).toContain('Backup now');
+    expect(integrationRows[0]?.textContent).toContain('Disconnect');
+    expect(integrationRows[1]?.textContent).toContain('Connect');
+  });
+
   it('should show the selected map workspace', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();

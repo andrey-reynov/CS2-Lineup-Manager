@@ -232,6 +232,26 @@ type PerformanceLogEntry = {
   details?: Record<string, unknown>;
 };
 
+type CloudProviderId = 'googleDrive' | 'yandexDisk';
+
+type CloudProviderStatusModel = {
+  id: CloudProviderId;
+  displayName: string;
+  configured: boolean;
+  connected: boolean;
+  detail: string;
+  accountLabel?: string | null;
+  lastBackupAtEpochMs?: number | null;
+};
+
+type CloudUploadResult = {
+  providerId: CloudProviderId;
+  fileName: string;
+  remotePath: string;
+  webViewLink?: string | null;
+  lastBackupAtEpochMs: number;
+};
+
 type MediaOptimizationState = {
   status: 'idle' | 'scanning' | 'running' | 'done' | 'error';
   total: number;
@@ -376,6 +396,22 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
 };
 const PANEL_WIDTH_MIN = 280;
 const PANEL_WIDTH_MAX = 420;
+const DEFAULT_CLOUD_PROVIDER_STATUSES: CloudProviderStatusModel[] = [
+  {
+    id: 'googleDrive',
+    displayName: 'Google Drive',
+    configured: false,
+    connected: false,
+    detail: 'Set CS2NADES_GOOGLE_DRIVE_CLIENT_ID and CS2NADES_GOOGLE_DRIVE_REDIRECT_URI in the environment.',
+  },
+  {
+    id: 'yandexDisk',
+    displayName: 'Yandex.Disk',
+    configured: false,
+    connected: false,
+    detail: 'Set CS2NADES_YANDEX_DISK_CLIENT_ID and CS2NADES_YANDEX_DISK_REDIRECT_URI in the environment.',
+  },
+];
 
 const DEFAULT_MAPS: TacticalMap[] = [
   {
@@ -653,6 +689,9 @@ export class App {
   protected readonly exportStatus = signal<string | null>(null);
   protected readonly exportProgress = signal(0);
   protected readonly storageMigrationStatus = signal<StorageMigrationStatus | null>(null);
+  protected readonly cloudProviders = signal<CloudProviderStatusModel[]>(DEFAULT_CLOUD_PROVIDER_STATUSES);
+  protected readonly cloudActionProviderId = signal<CloudProviderId | null>(null);
+  protected readonly cloudError = signal<string | null>(null);
   protected readonly draggedMediaId = signal<string | null>(null);
   protected readonly selectedMediaId = signal<string | null>(null);
   protected readonly imageEditorMediaId = signal<string | null>(null);
@@ -686,6 +725,13 @@ export class App {
   protected readonly panelWidthMin = PANEL_WIDTH_MIN;
   protected readonly panelWidthMax = PANEL_WIDTH_MAX;
 
+  protected readonly cloudProvidersById = computed(() => {
+    const next = new Map<CloudProviderId, CloudProviderStatusModel>();
+    for (const provider of this.cloudProviders()) {
+      next.set(provider.id, provider);
+    }
+    return next;
+  });
   @HostBinding('style.--vscode-accent')
   protected get hostAccentColor(): string {
     return this.currentAccentColor().color;
@@ -3284,19 +3330,9 @@ export class App {
       this.exportProgress.set(4);
       this.exportStatus.set('Exporting your media...');
       await this.nextAnimationFrame();
-      const [points, playlists, memberships] = await Promise.all([
-        this.storage.loadPoints(),
-        this.storage.loadPlaylists(),
-        this.storage.loadPlaylistMemberships(),
-      ]);
-      this.exportProgress.set(28);
-      const blob = await this.storage.exportZip(
-        points,
-        this.customStoredMaps(),
-        playlists,
-        memberships,
-      );
+      const blob = await this.buildBackupArchiveBlob();
       this.exportProgress.set(72);
+      this.cloudError.set(null);
       await this.saveZip(blob, `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`);
       this.exportProgress.set(100);
       await this.nextAnimationFrame();
@@ -3324,6 +3360,72 @@ export class App {
       }
       if (status.error) {
         throw new Error(status.error);
+  protected cloudProvider(providerId: CloudProviderId): CloudProviderStatusModel {
+    return this.cloudProvidersById().get(providerId)
+      ?? DEFAULT_CLOUD_PROVIDER_STATUSES.find((provider) => provider.id === providerId)
+      ?? DEFAULT_CLOUD_PROVIDER_STATUSES[0];
+  }
+
+  protected cloudPrimaryActionLabel(providerId: CloudProviderId): string {
+    const provider = this.cloudProvider(providerId);
+    if (!provider.configured) {
+      return 'Set env';
+    }
+    return provider.connected ? 'Backup now' : 'Connect';
+  }
+
+  protected cloudProviderBusy(providerId: CloudProviderId): boolean {
+    return this.cloudActionProviderId() === providerId;
+  }
+
+  protected cloudLastBackupText(providerId: CloudProviderId): string {
+    const lastBackupAt = this.cloudProvider(providerId).lastBackupAtEpochMs;
+    if (!lastBackupAt) {
+      return 'No backups yet';
+    }
+
+    try {
+      return `Last backup ${new Date(lastBackupAt).toLocaleString()}`;
+    } catch {
+      return 'Backup completed';
+    }
+  }
+
+  protected async triggerCloudProviderAction(providerId: CloudProviderId): Promise<void> {
+    const provider = this.cloudProvider(providerId);
+    if (!provider.configured || this.dataActionLocked() || this.cloudProviderBusy(providerId)) {
+      return;
+    }
+
+    if (provider.connected) {
+      await this.backupArchiveToCloud(providerId);
+      return;
+    }
+
+    await this.connectCloudProvider(providerId);
+  }
+
+  protected async disconnectCloudProvider(providerId: CloudProviderId): Promise<void> {
+    if (this.dataActionLocked() || this.cloudProviderBusy(providerId)) {
+      return;
+    }
+    if (!this.isDesktopRuntime()) {
+      this.cloudError.set('Cloud sign-out is only available in the desktop app');
+      return;
+    }
+
+    this.cloudActionProviderId.set(providerId);
+    this.cloudError.set(null);
+    try {
+      const status = await this.invokeTauriCommand<CloudProviderStatusModel>('disconnect_cloud_provider', { providerId });
+      this.mergeCloudProviderStatus(status);
+    } catch (error) {
+      this.cloudError.set(error instanceof Error ? error.message : 'Cloud sign-out failed');
+    } finally {
+      this.cloudActionProviderId.set(null);
+    }
+  }
+
       }
 
       const contentRoot = this.desktopContentRoot().trim() || status.contentRoot || status.defaultContentRoot || '';
@@ -3451,6 +3553,74 @@ export class App {
 
     try {
       const { maps, points, playlists = [] } = await this.storage.importZipData(file);
+  private async buildBackupArchiveBlob(): Promise<Blob> {
+    const [points, playlists, memberships] = await Promise.all([
+      this.storage.loadPoints(),
+      this.storage.loadPlaylists(),
+      this.storage.loadPlaylistMemberships(),
+    ]);
+    this.exportProgress.set(28);
+    return this.storage.exportZip(points, this.customStoredMaps(), playlists, memberships);
+  }
+
+  private async connectCloudProvider(providerId: CloudProviderId): Promise<void> {
+    if (!this.isDesktopRuntime()) {
+      this.cloudError.set('Cloud sign-in is only available in the desktop app');
+      return;
+    }
+
+    this.cloudActionProviderId.set(providerId);
+    this.cloudError.set(null);
+    this.importError.set(null);
+    try {
+      const status = await this.invokeTauriCommand<CloudProviderStatusModel>('start_cloud_provider_auth', { providerId });
+      this.mergeCloudProviderStatus(status);
+    } catch (error) {
+      this.cloudError.set(error instanceof Error ? error.message : 'Cloud sign-in failed');
+    } finally {
+      this.cloudActionProviderId.set(null);
+    }
+  }
+
+  private async backupArchiveToCloud(providerId: CloudProviderId): Promise<void> {
+    if (!this.isDesktopRuntime()) {
+      this.cloudError.set('Cloud backups are only available in the desktop app');
+      return;
+    }
+
+    try {
+      this.cloudActionProviderId.set(providerId);
+      this.cloudError.set(null);
+      this.importError.set(null);
+      this.exportProgress.set(4);
+      this.exportStatus.set('Preparing your backup archive...');
+      await this.nextAnimationFrame();
+      const blob = await this.buildBackupArchiveBlob();
+      this.exportProgress.set(76);
+      this.exportStatus.set(`Uploading backup to ${this.cloudProvider(providerId).displayName}...`);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const fileName = `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`;
+      const result = await this.invokeTauriCommand<CloudUploadResult>('upload_cloud_backup_archive', {
+        providerId,
+        fileName,
+        bytes: Array.from(bytes),
+      });
+      this.exportProgress.set(100);
+      await this.refreshCloudProviderStatuses();
+      globalThis.alert?.(
+        result.webViewLink
+          ? `Backup uploaded to ${this.cloudProvider(providerId).displayName}.\n\n${result.remotePath}\n${result.webViewLink}`
+          : `Backup uploaded to ${this.cloudProvider(providerId).displayName}.\n\n${result.remotePath}`,
+      );
+    } catch (error) {
+      this.cloudError.set(error instanceof Error ? error.message : 'Cloud backup upload failed');
+    } finally {
+      this.cloudActionProviderId.set(null);
+      this.exportStatus.set(null);
+      this.exportProgress.set(0);
+    }
+  }
+
       await this.storage.replaceAllMaps(maps);
       await this.storage.replaceAll(points);
       for (const playlist of playlists) {
@@ -4650,6 +4820,39 @@ export class App {
     this.playlistMemberships.set(memberships);
     this.selectedPlaylistIds.update((ids) => ids.filter((id) => playlists.some((playlist) => playlist.id === id)));
   }
+    await this.measureAsync('startup:cloud-status', () => this.refreshCloudProviderStatuses());
+  }
+
+  private async refreshCloudProviderStatuses(): Promise<void> {
+    if (!this.isDesktopRuntime()) {
+      this.cloudProviders.set(DEFAULT_CLOUD_PROVIDER_STATUSES);
+      return;
+    }
+
+    try {
+      const statuses = await this.invokeTauriCommand<CloudProviderStatusModel[]>('cloud_provider_statuses');
+      const ordered = DEFAULT_CLOUD_PROVIDER_STATUSES.map((provider) => (
+        statuses.find((status) => status.id === provider.id) ?? provider
+      ));
+      this.cloudProviders.set(ordered);
+    } catch {
+      this.cloudProviders.set(DEFAULT_CLOUD_PROVIDER_STATUSES);
+    }
+  }
+
+  private mergeCloudProviderStatus(status: CloudProviderStatusModel): void {
+    this.cloudProviders.update((providers) => providers.map((provider) => (
+      provider.id === status.id ? status : provider
+    )));
+  }
+
+  private isDesktopRuntime(): boolean {
+    return '__TAURI_INTERNALS__' in globalThis;
+  }
+
+  private async invokeTauriCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+    const core = await import('@tauri-apps/api/core');
+    return core.invoke<T>(command, args);
 
   private async refreshDesktopContentRoot(): Promise<void> {
     try {
