@@ -1886,7 +1886,7 @@ class DesktopLineupStorage implements LineupStoragePort {
       const previewBlob = media.previewPath && media.previewMimeType
         ? await this.readBlob(workspace.rootDir, media.previewPath, media.previewMimeType)
         : undefined;
-      const blob = thumbnailBlob ?? previewBlob ?? await this.readBlob(workspace.rootDir, media.path, media.mimeType);
+      const blob = await this.readBlob(workspace.rootDir, media.path, media.mimeType);
       return {
         id: media.id,
         name: media.name,
@@ -2015,14 +2015,8 @@ class DesktopLineupStorage implements LineupStoragePort {
       return;
     }
 
-    const compressedPath = media.blob && media.mimeType !== rows[0]?.mimeType
-      ? this.derivativeMediaPath(originalPath, 'large', media.mimeType)
-      : null;
     const thumbnailPath = media.thumbnailBlob ? this.derivativeMediaPath(originalPath, 'thumb') : null;
     const previewPath = media.previewBlob ? this.derivativeMediaPath(originalPath, 'preview') : null;
-    if (compressedPath && media.blob) {
-      await this.writeBlob(workspace.rootDir, compressedPath, media.blob);
-    }
     if (thumbnailPath && media.thumbnailBlob) {
       await this.writeBlob(workspace.rootDir, thumbnailPath, media.thumbnailBlob);
     }
@@ -2032,19 +2026,13 @@ class DesktopLineupStorage implements LineupStoragePort {
 
     await db.execute(
       `UPDATE media_assets SET
-        name=COALESCE($2, name),
-        mimeType=COALESCE($3, mimeType),
-        path=COALESCE($4, path),
-        thumbnailPath=COALESCE($5, thumbnailPath),
-        thumbnailMimeType=COALESCE($6, thumbnailMimeType),
-        previewPath=COALESCE($7, previewPath),
-        previewMimeType=COALESCE($8, previewMimeType)
+        thumbnailPath=COALESCE($2, thumbnailPath),
+        thumbnailMimeType=COALESCE($3, thumbnailMimeType),
+        previewPath=COALESCE($4, previewPath),
+        previewMimeType=COALESCE($5, previewMimeType)
       WHERE id = $1`,
       [
         media.id,
-        compressedPath ? media.name : null,
-        compressedPath ? media.mimeType : null,
-        compressedPath,
         thumbnailPath,
         media.thumbnailMimeType ?? null,
         previewPath,

@@ -1798,6 +1798,40 @@ describe('App', () => {
     expect(point.id).toBe(app.selectedPoint().id);
   });
 
+  it('should keep the original image blob for fullscreen and editor while generating lightweight variants', async () => {
+    stubObjectUrls();
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as any;
+    const originalBlob = new Blob(['original-fullres'], { type: 'image/png' });
+    const requestedSizes: number[] = [];
+
+    app.createImageVariant = async (_blob: Blob, maxSize: number) => {
+      requestedSizes.push(maxSize);
+      return {
+        blob: new Blob([`variant-${maxSize}`], { type: 'image/webp' }),
+        mimeType: 'image/webp',
+      };
+    };
+
+    const media = await app.createPointMediaFromBlob({
+      id: 'image-1',
+      name: 'image.png',
+      mimeType: 'image/png',
+      blob: originalBlob,
+      role: 'detail',
+      sourceLineupId: 'lineup-1',
+      sourceLineupTitle: 'Test lineup',
+    });
+
+    expect(media.blob).toBe(originalBlob);
+    expect(await media.blob.text()).toBe('original-fullres');
+    expect(media.mimeType).toBe('image/png');
+    expect(media.url).toContain('image/png');
+    expect(await media.thumbnailBlob.text()).toBe('variant-320');
+    expect(await media.previewBlob.text()).toBe('variant-960');
+    expect(requestedSizes).toEqual([320, 960]);
+  });
+
   it('should replace edited images while preserving media id and role', async () => {
     stubObjectUrls();
     const fixture = TestBed.createComponent(App);
@@ -1839,6 +1873,105 @@ describe('App', () => {
     });
     expect(app.selectedMediaId()).toBe('one');
     expect(app.imageEditorMedia()).toBeUndefined();
+  });
+
+  it('should optimize only preview derivatives without replacing the original image asset', async () => {
+    stubObjectUrls();
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance as any;
+    const originalBlob = new Blob(['original-library-image'], { type: 'image/png' });
+    const asset = {
+      id: 'asset-1',
+      name: 'asset.png',
+      type: 'image' as const,
+      mimeType: 'image/png',
+      blob: originalBlob,
+      url: 'blob:original',
+      role: 'detail' as const,
+      createdAt: '2026-07-23T00:00:00.000Z',
+    };
+    const updatedAssets: any[] = [];
+
+    app.storage.loadMediaAssetsForOptimization = async () => [asset];
+    app.storage.updateMediaAssetVariants = async (media: any) => {
+      updatedAssets.push(media);
+    };
+    app.createImageVariant = async (_blob: Blob, maxSize: number) => ({
+      blob: new Blob([`variant-${maxSize}`], { type: 'image/webp' }),
+      mimeType: 'image/webp',
+    });
+
+    await app.optimizeMediaLibrary();
+
+    expect(updatedAssets).toHaveLength(1);
+    expect(updatedAssets[0].blob).toBe(originalBlob);
+    expect(updatedAssets[0].mimeType).toBe('image/png');
+    expect(await updatedAssets[0].thumbnailBlob.text()).toBe('variant-320');
+    expect(await updatedAssets[0].previewBlob.text()).toBe('variant-960');
+  });
+
+  it('should switch readonly guide-slot images to the original source on hover for zoomed preview', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const app = fixture.componentInstance as any;
+
+    (compiled.querySelector('.map-button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    app.addedPoints.set({
+      'dust2:main': [
+        {
+          id: 'lineup-1',
+          resultSpotId: 'lineup-1',
+          label: '1',
+          mapId: 'dust2',
+          levelId: 'main',
+          x: 20,
+          y: 20,
+          kind: 'custom',
+          grenadeCategoryId: 'smoke',
+          teamSide: 'ct',
+          title: 'Test lineup',
+          description: '',
+          requirements: [],
+          media: [
+            {
+              id: 'media-1',
+              name: 'start.png',
+              type: 'image',
+              mimeType: 'image/png',
+              blob: new Blob(['original'], { type: 'image/png' }),
+              url: 'blob:original-full',
+              previewBlob: new Blob(['preview'], { type: 'image/webp' }),
+              previewUrl: 'blob:preview-low',
+              previewMimeType: 'image/webp',
+              thumbnailBlob: new Blob(['thumb'], { type: 'image/webp' }),
+              thumbnailUrl: 'blob:thumb-low',
+              thumbnailMimeType: 'image/webp',
+              role: 'start',
+            },
+          ],
+          heroMediaId: 'media-1',
+          trajectory: { vertices: [] },
+          detailsLoaded: true,
+          mediaLoaded: true,
+        },
+      ],
+    });
+    app.selectedPointId.set('lineup-1');
+    app.selectedPointMode.set('view');
+    fixture.detectChanges();
+
+    const guideImage = compiled.querySelector('.point-details.is-view .guide-slot img') as HTMLImageElement;
+    expect(guideImage).toBeTruthy();
+    expect(guideImage.getAttribute('src')).toBe('blob:preview-low');
+
+    (guideImage.closest('.guide-slot') as HTMLButtonElement).dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    fixture.detectChanges();
+
+    expect(guideImage.getAttribute('src')).toBe('blob:original-full');
   });
 
   it('should open fullscreen preview from edit media on double click', async () => {

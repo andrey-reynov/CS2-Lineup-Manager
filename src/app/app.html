@@ -1060,12 +1060,14 @@
                   class="guide-slot"
                   type="button"
                   (click)="openMediaPreview(media)"
+                  (mouseenter)="promoteGuideMediaToHighRes(media)"
+                  (focus)="promoteGuideMediaToHighRes(media)"
                   (mousemove)="updateGuidePreviewFocus($event)"
                   (wheel)="onGuidePreviewWheel($event)"
                 >
                   <small>Stand</small>
                   @if (media.type === 'image') {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
+                    <img [src]="mediaGuideSlotUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
                     <video [src]="media.url" muted (loadedmetadata)="onGuideMediaLoaded($event)"></video>
                   }
@@ -1096,12 +1098,14 @@
                   class="guide-slot"
                   type="button"
                   (click)="openMediaPreview(media)"
+                  (mouseenter)="promoteGuideMediaToHighRes(media)"
+                  (focus)="promoteGuideMediaToHighRes(media)"
                   (mousemove)="updateGuidePreviewFocus($event)"
                   (wheel)="onGuidePreviewWheel($event)"
                 >
                   <small>Aim</small>
                   @if (media.type === 'image') {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
+                    <img [src]="mediaGuideSlotUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
                     <video [src]="media.url" muted (loadedmetadata)="onGuideMediaLoaded($event)"></video>
                   }
@@ -1112,12 +1116,14 @@
                   class="guide-slot"
                   type="button"
                   (click)="openMediaPreview(media)"
+                  (mouseenter)="promoteGuideMediaToHighRes(media)"
+                  (focus)="promoteGuideMediaToHighRes(media)"
                   (mousemove)="updateGuidePreviewFocus($event)"
                   (wheel)="onGuidePreviewWheel($event)"
                 >
                   <small>Result</small>
                   @if (media.type === 'image') {
-                    <img [src]="mediaPreviewUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
+                    <img [src]="mediaGuideSlotUrl(media)" [alt]="media.name" (load)="onGuideMediaLoaded($event)" />
                   } @else {
                     <video [src]="media.url" muted (loadedmetadata)="onGuideMediaLoaded($event)"></video>
                   }

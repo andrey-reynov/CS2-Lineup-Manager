@@ -683,15 +683,16 @@ export class App {
   protected readonly previewMediaId = signal<string | null>(null);
   protected readonly previewZoom = signal(1);
   protected readonly previewPan = signal({ x: 0, y: 0 });
+  protected readonly guideHighResMediaIds = signal<Set<string>>(new Set());
   protected readonly mediaPoolOpen = signal(false);
   protected readonly mediaPoolAssets = signal<PointMedia[]>([]);
   protected readonly importError = signal<string | null>(null);
   protected readonly exportStatus = signal<string | null>(null);
   protected readonly exportProgress = signal(0);
-  protected readonly storageMigrationStatus = signal<StorageMigrationStatus | null>(null);
   protected readonly cloudProviders = signal<CloudProviderStatusModel[]>(DEFAULT_CLOUD_PROVIDER_STATUSES);
   protected readonly cloudActionProviderId = signal<CloudProviderId | null>(null);
   protected readonly cloudError = signal<string | null>(null);
+  protected readonly storageMigrationStatus = signal<StorageMigrationStatus | null>(null);
   protected readonly draggedMediaId = signal<string | null>(null);
   protected readonly selectedMediaId = signal<string | null>(null);
   protected readonly imageEditorMediaId = signal<string | null>(null);
@@ -724,7 +725,6 @@ export class App {
   protected readonly selectedTeamTColorId = computed(() => this.userSettings().teamTColorId);
   protected readonly panelWidthMin = PANEL_WIDTH_MIN;
   protected readonly panelWidthMax = PANEL_WIDTH_MAX;
-
   protected readonly cloudProvidersById = computed(() => {
     const next = new Map<CloudProviderId, CloudProviderStatusModel>();
     for (const provider of this.cloudProviders()) {
@@ -732,6 +732,7 @@ export class App {
     }
     return next;
   });
+
   @HostBinding('style.--vscode-accent')
   protected get hostAccentColor(): string {
     return this.currentAccentColor().color;
@@ -2071,6 +2072,7 @@ export class App {
     this.flushSelectedPointMetadataSave();
     this.selectedPointId.set(null);
     this.selectedPointMode.set('view');
+    this.guideHighResMediaIds.set(new Set());
     this.lineupChooserOpen.set(false);
     this.playlistAssignmentOpen.set(false);
     this.pendingLineupPlaylistIds.set(null);
@@ -2236,6 +2238,21 @@ export class App {
     }
   }
 
+  protected promoteGuideMediaToHighRes(media: PointMedia): void {
+    if (media.type !== 'image') {
+      return;
+    }
+
+    this.guideHighResMediaIds.update((current) => {
+      if (current.has(media.id)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(media.id);
+      return next;
+    });
+  }
+
   protected onGuidePreviewWheel(event: WheelEvent): void {
     const slot = event.currentTarget as HTMLElement;
     event.preventDefault();
@@ -2315,14 +2332,7 @@ export class App {
 
       for (const asset of candidates) {
         const patch: PointMedia = { ...asset };
-        if (!this.isCompressedImageMime(asset.mimeType)) {
-          const large = await this.createImageVariant(asset.blob, MEDIA_LARGE_MAX_SIZE, MEDIA_LARGE_QUALITY);
-          patch.name = this.optimizedImageName(asset.name, large.mimeType);
-          patch.mimeType = large.mimeType;
-          patch.blob = large.blob;
-          patch.url = URL.createObjectURL(large.blob);
-        }
-        const variantSource = patch.blob;
+        const variantSource = asset.blob;
         if (!asset.thumbnailBlob) {
           const thumbnail = await this.createImageVariant(variantSource, MEDIA_THUMB_MAX_SIZE, MEDIA_THUMB_QUALITY);
           patch.thumbnailBlob = thumbnail.blob;
@@ -2365,7 +2375,7 @@ export class App {
   }
 
   private isMediaOptimized(media: PointMedia): boolean {
-    return this.isCompressedImageMime(media.mimeType) && Boolean(media.thumbnailBlob && media.previewBlob);
+    return Boolean(media.thumbnailBlob && media.previewBlob);
   }
 
   private isCompressedImageMime(mimeType: string): boolean {
@@ -3236,6 +3246,12 @@ export class App {
     return media.url || media.previewUrl || media.thumbnailUrl || '';
   }
 
+  protected mediaGuideSlotUrl(media: PointMedia): string {
+    return this.guideHighResMediaIds().has(media.id)
+      ? this.mediaOriginalUrl(media)
+      : this.mediaPreviewUrl(media);
+  }
+
   protected trajectorySvgPoints(): string {
     return this.trajectorySvgPointList();
   }
@@ -3327,12 +3343,12 @@ export class App {
 
     try {
       this.importError.set(null);
+      this.cloudError.set(null);
       this.exportProgress.set(4);
       this.exportStatus.set('Exporting your media...');
       await this.nextAnimationFrame();
       const blob = await this.buildBackupArchiveBlob();
       this.exportProgress.set(72);
-      this.cloudError.set(null);
       await this.saveZip(blob, `cs2-nades-${new Date().toISOString().slice(0, 10)}.zip`);
       this.exportProgress.set(100);
       await this.nextAnimationFrame();
@@ -3344,22 +3360,6 @@ export class App {
     }
   }
 
-  protected async migrateLegacyDataFromSettings(): Promise<void> {
-    const getMigrationStatus = this.storage.getMigrationStatus?.bind(this.storage);
-    const migrateLegacyData = this.storage.migrateLegacyData?.bind(this.storage);
-    if (!getMigrationStatus || !migrateLegacyData) {
-      this.importError.set('Desktop migration is not available in this environment');
-      return;
-    }
-
-    try {
-      const status = await getMigrationStatus();
-      if (!status.isDesktop) {
-        this.importError.set('Desktop migration is only available in the desktop app');
-        return;
-      }
-      if (status.error) {
-        throw new Error(status.error);
   protected cloudProvider(providerId: CloudProviderId): CloudProviderStatusModel {
     return this.cloudProvidersById().get(providerId)
       ?? DEFAULT_CLOUD_PROVIDER_STATUSES.find((provider) => provider.id === providerId)
@@ -3426,6 +3426,22 @@ export class App {
     }
   }
 
+  protected async migrateLegacyDataFromSettings(): Promise<void> {
+    const getMigrationStatus = this.storage.getMigrationStatus?.bind(this.storage);
+    const migrateLegacyData = this.storage.migrateLegacyData?.bind(this.storage);
+    if (!getMigrationStatus || !migrateLegacyData) {
+      this.importError.set('Desktop migration is not available in this environment');
+      return;
+    }
+
+    try {
+      const status = await getMigrationStatus();
+      if (!status.isDesktop) {
+        this.importError.set('Desktop migration is only available in the desktop app');
+        return;
+      }
+      if (status.error) {
+        throw new Error(status.error);
       }
 
       const contentRoot = this.desktopContentRoot().trim() || status.contentRoot || status.defaultContentRoot || '';
@@ -3537,22 +3553,6 @@ export class App {
     return savedPath;
   }
 
-  private nextAnimationFrame(): Promise<void> {
-    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-  }
-
-  protected async importZip(event?: Event): Promise<void> {
-    if (this.dataActionLocked()) {
-      return;
-    }
-
-    const file = event ? this.fileFromInputEvent(event) : await this.pickZipFile();
-    if (!file) {
-      return;
-    }
-
-    try {
-      const { maps, points, playlists = [] } = await this.storage.importZipData(file);
   private async buildBackupArchiveBlob(): Promise<Blob> {
     const [points, playlists, memberships] = await Promise.all([
       this.storage.loadPoints(),
@@ -3621,6 +3621,22 @@ export class App {
     }
   }
 
+  private nextAnimationFrame(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  protected async importZip(event?: Event): Promise<void> {
+    if (this.dataActionLocked()) {
+      return;
+    }
+
+    const file = event ? this.fileFromInputEvent(event) : await this.pickZipFile();
+    if (!file) {
+      return;
+    }
+
+    try {
+      const { maps, points, playlists = [] } = await this.storage.importZipData(file);
       await this.storage.replaceAllMaps(maps);
       await this.storage.replaceAll(points);
       for (const playlist of playlists) {
@@ -4382,17 +4398,12 @@ export class App {
     }
 
     try {
-      const large = await this.createImageVariant(options.blob, MEDIA_LARGE_MAX_SIZE, MEDIA_LARGE_QUALITY);
       const [thumbnail, preview] = await Promise.all([
-        this.createImageVariant(large.blob, MEDIA_THUMB_MAX_SIZE, MEDIA_THUMB_QUALITY),
-        this.createImageVariant(large.blob, MEDIA_PREVIEW_MAX_SIZE, MEDIA_PREVIEW_QUALITY),
+        this.createImageVariant(options.blob, MEDIA_THUMB_MAX_SIZE, MEDIA_THUMB_QUALITY),
+        this.createImageVariant(options.blob, MEDIA_PREVIEW_MAX_SIZE, MEDIA_PREVIEW_QUALITY),
       ]);
       return {
         ...media,
-        name: this.optimizedImageName(options.name, large.mimeType),
-        mimeType: large.mimeType,
-        blob: large.blob,
-        url: URL.createObjectURL(large.blob),
         thumbnailBlob: thumbnail.blob,
         thumbnailUrl: URL.createObjectURL(thumbnail.blob),
         thumbnailMimeType: thumbnail.mimeType,
@@ -4809,17 +4820,6 @@ export class App {
     await this.measureAsync('startup:maps', () => this.loadStoredMaps());
     await this.measureAsync('startup:lineup-summaries', () => this.loadStoredLineupSummaries());
     await this.measureAsync('startup:playlists', () => this.loadStoredPlaylists());
-  }
-
-  private async loadStoredPlaylists(): Promise<void> {
-    const [playlists, memberships] = await Promise.all([
-      this.storage.loadPlaylists(),
-      this.storage.loadPlaylistMemberships(),
-    ]);
-    this.playlists.set(playlists);
-    this.playlistMemberships.set(memberships);
-    this.selectedPlaylistIds.update((ids) => ids.filter((id) => playlists.some((playlist) => playlist.id === id)));
-  }
     await this.measureAsync('startup:cloud-status', () => this.refreshCloudProviderStatuses());
   }
 
@@ -4853,6 +4853,17 @@ export class App {
   private async invokeTauriCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
     const core = await import('@tauri-apps/api/core');
     return core.invoke<T>(command, args);
+  }
+
+  private async loadStoredPlaylists(): Promise<void> {
+    const [playlists, memberships] = await Promise.all([
+      this.storage.loadPlaylists(),
+      this.storage.loadPlaylistMemberships(),
+    ]);
+    this.playlists.set(playlists);
+    this.playlistMemberships.set(memberships);
+    this.selectedPlaylistIds.update((ids) => ids.filter((id) => playlists.some((playlist) => playlist.id === id)));
+  }
 
   private async refreshDesktopContentRoot(): Promise<void> {
     try {

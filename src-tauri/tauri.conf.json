@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist/cs2nades/browser",
     "devUrl": "http://127.0.0.1:4200",
-    "beforeDevCommand": ".\\scripts\\ensure-web-dev.cmd",
-    "beforeBuildCommand": ".\\.tools\\node-v24.16.0-win-x64\\npm.cmd run build"
+    "beforeDevCommand": "node ./scripts/ensure-web-dev.mjs",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [

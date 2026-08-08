@@ -2,18 +2,18 @@
   "name": "cs2nades",
   "version": "0.1.18",
   "scripts": {
-    "ng": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js",
-    "start": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js serve --host 127.0.0.1",
-    "build": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js build",
-    "watch": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js build --watch --configuration development",
-    "test": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js test",
-    "smoke:ui": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\node_modules\\@angular\\cli\\bin\\ng.js test --watch=false --include src/app/app.smoke.spec.ts",
+    "ng": "node ./node_modules/@angular/cli/bin/ng.js",
+    "start": "node ./node_modules/@angular/cli/bin/ng.js serve --host 127.0.0.1",
+    "build": "node ./node_modules/@angular/cli/bin/ng.js build",
+    "watch": "node ./node_modules/@angular/cli/bin/ng.js build --watch --configuration development",
+    "test": "node ./node_modules/@angular/cli/bin/ng.js test",
+    "smoke:ui": "node ./node_modules/@angular/cli/bin/ng.js test --watch=false --include src/app/app.smoke.spec.ts",
     "extract:cs2-assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/extract-cs2-assets.ps1",
     "tauri": "tauri",
-    "desktop:dev": ".\\scripts\\run-tauri-dev.cmd",
-    "desktop:build": ".\\scripts\\run-tauri-build.cmd",
-    "auto:build": ".\\scripts\\auto-build.cmd",
-    "version:bump-dev": ".\\.tools\\node-v24.16.0-win-x64\\node.exe .\\scripts\\bump-dev-version.mjs"
+    "desktop:dev": "node ./scripts/run-tauri-dev.mjs",
+    "desktop:build": "node ./scripts/run-tauri-build.mjs",
+    "auto:build": "node ./scripts/auto-build.mjs",
+    "version:bump-dev": "node ./scripts/bump-dev-version.mjs"
   },
   "private": true,
   "dependencies": {
